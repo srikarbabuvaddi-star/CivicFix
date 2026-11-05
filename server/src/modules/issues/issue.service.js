@@ -694,6 +694,60 @@ export async function reopenIssue(issueId, reason, user) {
 }
 
 /**
+ * Sanitize an audit event's details object for public consumption.
+ * Strictly whitelists non-sensitive public fields and strips all staff personal info.
+ */
+function sanitizeDetailsForPublic(details = {}) {
+  if (!details || typeof details !== 'object') {
+    return {};
+  }
+
+  const safeDetails = {};
+
+  if (details.departmentName) {
+    safeDetails.departmentName = details.departmentName;
+  }
+  if (details.resolutionNotes) {
+    safeDetails.resolutionNotes = details.resolutionNotes;
+  }
+  if (details.evidenceNotes) {
+    safeDetails.evidenceNotes = details.evidenceNotes;
+  }
+  if (details.actorRole) {
+    safeDetails.actorRole = details.actorRole;
+  }
+  if (details.reason) {
+    safeDetails.reason = details.reason;
+  }
+  if (details.rating !== undefined) {
+    safeDetails.rating = details.rating;
+  }
+  if (details.resolutionQuality) {
+    safeDetails.resolutionQuality = details.resolutionQuality;
+  }
+
+  return safeDetails;
+}
+
+/**
+ * Sanitize an audit event's details object for reporting citizen consumption.
+ * Strips private staff email addresses while preserving department and resolution notes.
+ */
+function sanitizeDetailsForReporter(details = {}) {
+  if (!details || typeof details !== 'object') {
+    return {};
+  }
+
+  const reporterDetails = { ...details };
+  delete reporterDetails.staffEmail;
+  delete reporterDetails.email;
+  delete reporterDetails.staff_email;
+  delete reporterDetails.employeeEmail;
+
+  return reporterDetails;
+}
+
+/**
  * Fetch immutable audit event timeline for an issue.
  */
 export async function getIssueTimeline(issueId, currentUser = null) {
@@ -721,20 +775,63 @@ export async function getIssueTimeline(issueId, currentUser = null) {
     .sort({ createdAt: 1 })
     .populate('actorId', 'name fullName email role')
     .populate('newDepartmentId', 'name')
-    .populate('newAssigneeId', 'name fullName')
+    .populate('previousDepartmentId', 'name')
+    .populate('newAssigneeId', 'name fullName email')
+    .populate('previousAssigneeId', 'name fullName email')
     .exec();
 
   return events.map((ev) => {
     const json = ev.toJSON();
-    if (!isPrivileged && !isReporter) {
-      if (json.actorId) {
+
+    // 1. Privileged users (Staff, Admin) retain full audit provenance required for operational workflows
+    if (isPrivileged) {
+      return json;
+    }
+
+    // 2. Reporting citizen view: retains status history and resolution details, masks staff email
+    if (isReporter) {
+      if (json.actorId && json.actorId.role !== ROLES.CITIZEN) {
         json.actorId = {
           role: json.actorId.role,
-          name: json.actorId.role === ROLES.CITIZEN ? 'Citizen Reporter' : 'Municipal Staff',
-          fullName: json.actorId.role === ROLES.CITIZEN ? 'Citizen Reporter' : 'Municipal Staff'
+          name: json.actorId.name || json.actorId.fullName || 'Municipal Staff',
+          fullName: json.actorId.fullName || json.actorId.name || 'Municipal Staff'
         };
       }
+      if (json.newAssigneeId && typeof json.newAssigneeId === 'object') {
+        const { email: _email, ...safeAssignee } = json.newAssigneeId;
+        json.newAssigneeId = safeAssignee;
+      }
+      if (json.previousAssigneeId && typeof json.previousAssigneeId === 'object') {
+        const { email: _email, ...safeAssignee } = json.previousAssigneeId;
+        json.previousAssigneeId = safeAssignee;
+      }
+      json.details = sanitizeDetailsForReporter(json.details);
+      return json;
     }
+
+    // 3. Public visitor view (unauthenticated visitor or non-reporter citizen):
+    // Anonymize actorId completely (no employee id, _id, email, or personal employee name)
+    if (json.actorId) {
+      json.actorId = {
+        role: json.actorId.role || 'user',
+        name: json.actorId.role === ROLES.CITIZEN ? 'Citizen Reporter' : 'Municipal Staff',
+        fullName: json.actorId.role === ROLES.CITIZEN ? 'Citizen Reporter' : 'Municipal Staff'
+      };
+    } else {
+      json.actorId = {
+        role: 'system',
+        name: 'Municipal System',
+        fullName: 'Municipal System'
+      };
+    }
+
+    // Remove staff assignee identifiers to protect employee privacy
+    json.newAssigneeId = null;
+    json.previousAssigneeId = null;
+
+    // Sanitize details object: strictly eliminate staffEmail, staffName, and personal identifiers
+    json.details = sanitizeDetailsForPublic(json.details);
+
     return json;
   });
 }

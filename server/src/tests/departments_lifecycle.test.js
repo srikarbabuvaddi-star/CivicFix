@@ -735,6 +735,274 @@ describe('CivicFix Department, Staff Management & Issue Lifecycle Suite', () => 
       expect(publicStaffEvent.actorId.fullName).toBe('Municipal Staff');
       expect(publicStaffEvent.actorId.email).toBeUndefined();
     });
+
+    it('proves public visitors and unrelated citizens cannot retrieve staff email addresses, personal names, or assignee IDs', async () => {
+      // Setup issue, assign to staff1 with department, staff1 resolves
+      const issueRes = await request(app)
+        .post('/api/v1/issues')
+        .set('Cookie', citizenCookie)
+        .set('x-csrf-token', citizenCsrfToken)
+        .send({
+          title: 'Deep Pothole on Maple Ave',
+          description: 'Large vehicle hazard near bus stop.',
+          category: ISSUE_CATEGORIES.ROADS,
+          location: { type: 'Point', coordinates: [77.59, 12.97], address: 'Maple Ave' },
+          visibility: ISSUE_VISIBILITY.PUBLIC
+        });
+      const issueId = issueRes.body.data.id;
+
+      const dept = await Department.create({
+        name: 'Highway Maintenance',
+        normalizedName: 'highway maintenance',
+        categoriesHandled: [ISSUE_CATEGORIES.ROADS]
+      });
+      await User.updateOne({ _id: staff1UserId }, { departmentId: dept._id });
+
+      // Admin assigns
+      await request(app)
+        .post(`/api/v1/issues/${issueId}/assign`)
+        .set('Cookie', adminCookie)
+        .set('x-csrf-token', adminCsrfToken)
+        .send({ departmentId: dept._id.toString(), assigneeId: staff1UserId, reason: 'Assigned to road crew' });
+
+      // Staff transitions to in_progress
+      await request(app)
+        .post(`/api/v1/issues/${issueId}/transition`)
+        .set('Cookie', staff1Cookie)
+        .set('x-csrf-token', staff1CsrfToken)
+        .send({ status: ISSUE_STATUS.IN_PROGRESS });
+
+      // Staff resolves
+      await request(app)
+        .post(`/api/v1/issues/${issueId}/resolve`)
+        .set('Cookie', staff1Cookie)
+        .set('x-csrf-token', staff1CsrfToken)
+        .send({ resolutionNotes: 'Filled pothole with cold asphalt patch.', evidenceNotes: 'Completed job inspection photo' });
+
+      // 1. Test unauthenticated public visitor
+      const pubRes = await request(app).get(`/api/v1/issues/${issueId}/timeline`);
+      expect(pubRes.status).toBe(200);
+      expect(pubRes.body.success).toBe(true);
+      expect(Array.isArray(pubRes.body.data)).toBe(true);
+      expect(pubRes.body.data.length).toBeGreaterThanOrEqual(3);
+
+      const pubRawJson = JSON.stringify(pubRes.body);
+      // Absolute guarantee: no staff or admin email address is exposed in response string
+      expect(pubRawJson).not.toContain('dave@civicfix.gov');
+      expect(pubRawJson).not.toContain('admin@civicfix.gov');
+      expect(pubRawJson).not.toContain('Technician Dave');
+
+      pubRes.body.data.forEach((event) => {
+        // actorId is anonymized
+        expect(event.actorId).toBeDefined();
+        expect(event.actorId.email).toBeUndefined();
+        expect(event.actorId._id).toBeUndefined();
+        expect(event.actorId.id).toBeUndefined();
+        expect(['Municipal Staff', 'Citizen Reporter', 'Municipal System']).toContain(event.actorId.fullName);
+        expect(['Municipal Staff', 'Citizen Reporter', 'Municipal System']).toContain(event.actorId.name);
+
+        // Assignee IDs are stripped to prevent identity leakage
+        expect(event.newAssigneeId).toBeNull();
+        expect(event.previousAssigneeId).toBeNull();
+
+        // details object is sanitized
+        expect(event.details?.staffEmail).toBeUndefined();
+        expect(event.details?.staffName).toBeUndefined();
+        expect(event.details?.email).toBeUndefined();
+      });
+
+      // 2. Test unrelated authenticated citizen (also gets sanitized public view)
+      const otherCitRes = await request(app)
+        .get(`/api/v1/issues/${issueId}/timeline`)
+        .set('Cookie', otherCitizenCookie);
+
+      expect(otherCitRes.status).toBe(200);
+      const otherCitRawJson = JSON.stringify(otherCitRes.body);
+      expect(otherCitRawJson).not.toContain('dave@civicfix.gov');
+      expect(otherCitRawJson).not.toContain('Technician Dave');
+
+      otherCitRes.body.data.forEach((event) => {
+        expect(event.actorId.email).toBeUndefined();
+        expect(event.newAssigneeId).toBeNull();
+        expect(event.previousAssigneeId).toBeNull();
+        expect(event.details?.staffEmail).toBeUndefined();
+        expect(event.details?.staffName).toBeUndefined();
+      });
+    });
+
+    it('separately verifies timeline access for public visitor, reporting citizen, staff technician, and administrator', async () => {
+      // Create issue
+      const issueRes = await request(app)
+        .post('/api/v1/issues')
+        .set('Cookie', citizenCookie)
+        .set('x-csrf-token', citizenCsrfToken)
+        .send({
+          title: 'Streetlight Pole Damaged',
+          description: 'Light knocked out after storm.',
+          category: ISSUE_CATEGORIES.STREETLIGHT,
+          location: { type: 'Point', coordinates: [77.6, 12.95], address: 'Oak Street' },
+          visibility: ISSUE_VISIBILITY.PUBLIC
+        });
+      const issueId = issueRes.body.data.id;
+
+      const dept = await Department.create({
+        name: 'Electrical Services',
+        normalizedName: 'electrical services',
+        categoriesHandled: [ISSUE_CATEGORIES.STREETLIGHT]
+      });
+      await User.updateOne({ _id: staff1UserId }, { departmentId: dept._id });
+
+      // Admin assigns
+      await request(app)
+        .post(`/api/v1/issues/${issueId}/assign`)
+        .set('Cookie', adminCookie)
+        .set('x-csrf-token', adminCsrfToken)
+        .send({ departmentId: dept._id.toString(), assigneeId: staff1UserId, reason: 'Dispatched electrician' });
+
+      // Staff transitions to in_progress
+      await request(app)
+        .post(`/api/v1/issues/${issueId}/transition`)
+        .set('Cookie', staff1Cookie)
+        .set('x-csrf-token', staff1CsrfToken)
+        .send({ status: ISSUE_STATUS.IN_PROGRESS });
+
+      // Staff resolves
+      await request(app)
+        .post(`/api/v1/issues/${issueId}/resolve`)
+        .set('Cookie', staff1Cookie)
+        .set('x-csrf-token', staff1CsrfToken)
+        .send({ resolutionNotes: 'Replaced ballast and lamp bulb.', evidenceNotes: 'Checked meter voltage' });
+
+      // A) PUBLIC VISITOR: Sanitized, no employee PII
+      const pubRes = await request(app).get(`/api/v1/issues/${issueId}/timeline`);
+      expect(pubRes.status).toBe(200);
+      const pubAssigned = pubRes.body.data.find((e) => e.eventType === AUDIT_EVENT_TYPE.ASSIGNED);
+      expect(pubAssigned.details.departmentName).toBe('Electrical Services');
+      expect(pubAssigned.details.staffEmail).toBeUndefined();
+      expect(pubAssigned.details.staffName).toBeUndefined();
+      expect(pubAssigned.newAssigneeId).toBeNull();
+
+      // B) REPORTING CITIZEN: Retains progress and resolution notes, but masks staff personal email
+      const repRes = await request(app)
+        .get(`/api/v1/issues/${issueId}/timeline`)
+        .set('Cookie', citizenCookie);
+      expect(repRes.status).toBe(200);
+      const repAssigned = repRes.body.data.find((e) => e.eventType === AUDIT_EVENT_TYPE.ASSIGNED);
+      expect(repAssigned.details.departmentName).toBe('Electrical Services');
+      expect(repAssigned.details.staffEmail).toBeUndefined();
+      if (repAssigned.newAssigneeId) {
+        expect(repAssigned.newAssigneeId.email).toBeUndefined();
+      }
+      const repResolved = repRes.body.data.find((e) => e.eventType === AUDIT_EVENT_TYPE.RESOLVED);
+      expect(repResolved.details.resolutionNotes).toBe('Replaced ballast and lamp bulb.');
+      expect(repResolved.details.evidenceNotes).toBe('Checked meter voltage');
+      expect(JSON.stringify(repRes.body)).not.toContain('dave@civicfix.gov');
+
+      // C) STAFF TECHNICIAN: Authorized work provenance retains staff operational context
+      const staffRes = await request(app)
+        .get(`/api/v1/issues/${issueId}/timeline`)
+        .set('Cookie', staff1Cookie);
+      expect(staffRes.status).toBe(200);
+      const staffAssigned = staffRes.body.data.find((e) => e.eventType === AUDIT_EVENT_TYPE.ASSIGNED);
+      expect(staffAssigned.details.departmentName).toBe('Electrical Services');
+      expect(staffAssigned.details.staffEmail).toBe('dave@civicfix.gov');
+      expect(staffAssigned.details.staffName).toBe('Technician Dave');
+      expect(staffAssigned.newAssigneeId).toBeDefined();
+
+      // D) ADMINISTRATOR: Retains full unredacted audit records for operational and supervisory audit
+      const adminRes = await request(app)
+        .get(`/api/v1/issues/${issueId}/timeline`)
+        .set('Cookie', adminCookie);
+      expect(adminRes.status).toBe(200);
+      const adminAssigned = adminRes.body.data.find((e) => e.eventType === AUDIT_EVENT_TYPE.ASSIGNED);
+      expect(adminAssigned.details.staffEmail).toBe('dave@civicfix.gov');
+      expect(adminAssigned.details.staffName).toBe('Technician Dave');
+      expect(adminAssigned.actorId.email).toBe('admin@civicfix.gov');
+      expect(adminAssigned.newAssigneeId.email).toBe('dave@civicfix.gov');
+    });
+
+    it('proves underlying audit events in MongoDB remain immutable and are never deleted or modified to hide information', async () => {
+      const issueRes = await request(app)
+        .post('/api/v1/issues')
+        .set('Cookie', citizenCookie)
+        .set('x-csrf-token', citizenCsrfToken)
+        .send({
+          title: 'Audit Storage Test',
+          description: 'Testing immutable storage.',
+          category: ISSUE_CATEGORIES.WATER,
+          location: { type: 'Point', coordinates: [77.6, 12.95], address: 'Water Line 4' },
+          visibility: ISSUE_VISIBILITY.PUBLIC
+        });
+      const issueId = issueRes.body.data.id;
+
+      const dept = await Department.create({
+        name: 'Water Works Dept',
+        normalizedName: 'water works dept',
+        categoriesHandled: [ISSUE_CATEGORIES.WATER]
+      });
+      await User.updateOne({ _id: staff1UserId }, { departmentId: dept._id });
+
+      await request(app)
+        .post(`/api/v1/issues/${issueId}/assign`)
+        .set('Cookie', adminCookie)
+        .set('x-csrf-token', adminCsrfToken)
+        .send({ departmentId: dept._id.toString(), assigneeId: staff1UserId });
+
+      // Now query timeline as public visitor (API response is sanitized)
+      const pubRes = await request(app).get(`/api/v1/issues/${issueId}/timeline`);
+      expect(pubRes.status).toBe(200);
+      const pubAssigned = pubRes.body.data.find((e) => e.eventType === AUDIT_EVENT_TYPE.ASSIGNED);
+      expect(pubAssigned.details.staffEmail).toBeUndefined();
+
+      // Directly verify MongoDB raw audit document in database was NOT altered or purged
+      const rawDbEvent = await IssueEvent.findOne({
+        issueId,
+        eventType: AUDIT_EVENT_TYPE.ASSIGNED
+      }).lean();
+
+      expect(rawDbEvent).toBeDefined();
+      expect(rawDbEvent.details.staffEmail).toBe('dave@civicfix.gov');
+      expect(rawDbEvent.details.staffName).toBe('Technician Dave');
+      expect(rawDbEvent.newAssigneeId.toString()).toBe(staff1UserId);
+      expect(rawDbEvent.actorId.toString()).toBe(adminUserId);
+    });
+
+    it('enforces privacy boundary so non-reporters and public visitors cannot access private issue timelines (403)', async () => {
+      const issueRes = await request(app)
+        .post('/api/v1/issues')
+        .set('Cookie', citizenCookie)
+        .set('x-csrf-token', citizenCsrfToken)
+        .send({
+          title: 'Private Drainage Complaint',
+          description: 'Drainage problem on private property.',
+          category: ISSUE_CATEGORIES.DRAINAGE,
+          location: { type: 'Point', coordinates: [77.6, 12.95], address: 'Private Lane' },
+          visibility: ISSUE_VISIBILITY.PRIVATE
+        });
+      const issueId = issueRes.body.data.id;
+
+      // 1. Public visitor: 403 Forbidden
+      const pubRes = await request(app).get(`/api/v1/issues/${issueId}/timeline`);
+      expect(pubRes.status).toBe(403);
+
+      // 2. Unrelated citizen: 403 Forbidden
+      const otherRes = await request(app)
+        .get(`/api/v1/issues/${issueId}/timeline`)
+        .set('Cookie', otherCitizenCookie);
+      expect(otherRes.status).toBe(403);
+
+      // 3. Reporter: 200 OK
+      const repRes = await request(app)
+        .get(`/api/v1/issues/${issueId}/timeline`)
+        .set('Cookie', citizenCookie);
+      expect(repRes.status).toBe(200);
+
+      // 4. Admin: 200 OK
+      const adminRes = await request(app)
+        .get(`/api/v1/issues/${issueId}/timeline`)
+        .set('Cookie', adminCookie);
+      expect(adminRes.status).toBe(200);
+    });
   });
 
   describe('6. Queues & Workspaces', () => {
