@@ -697,6 +697,63 @@ export async function reopenIssue(issueId, reason, user) {
  * Sanitize an audit event's details object for public consumption.
  * Strictly whitelists non-sensitive public fields and strips all staff personal info.
  */
+/**
+ * Closed mapping of standard, public-safe descriptions for issue lifecycle events.
+ * Guarantees that internal administrative notes, staff reasons, or employee PII
+ * entered during workflow transitions are never leaked to unauthenticated public visitors.
+ */
+const PUBLIC_EVENT_DESCRIPTIONS = {
+  [AUDIT_EVENT_TYPE.CREATED]: 'Initial report submitted by citizen',
+  [AUDIT_EVENT_TYPE.ASSIGNED]: 'Issue assigned to handling department',
+  [AUDIT_EVENT_TYPE.REASSIGNED]: 'Issue reassigned within handling department',
+  [AUDIT_EVENT_TYPE.STATUS_CHANGED]: 'Status updated',
+  [AUDIT_EVENT_TYPE.RESOLVED]: 'Resolution completed by handling department',
+  [AUDIT_EVENT_TYPE.CLOSED]: 'Resolution verified and closed',
+  [AUDIT_EVENT_TYPE.VERIFIED_CLOSED]: 'Resolution verified and closed',
+  [AUDIT_EVENT_TYPE.REOPENED]: 'Issue reopened for further review',
+  [AUDIT_EVENT_TYPE.REJECTED]: 'Issue review concluded',
+  [AUDIT_EVENT_TYPE.WITHDRAWN]: 'Report withdrawn by citizen',
+  [AUDIT_EVENT_TYPE.UPDATED]: 'Report updated'
+};
+
+/**
+ * Validate that text is safe for public exposure.
+ * Strictly rejects any text containing email addresses, telephone numbers,
+ * employee identification markers, server paths, or internal administrative tokens.
+ */
+function isPublicSafeText(text) {
+  if (!text || typeof text !== 'string') return false;
+  const str = text.trim();
+  if (str.length === 0 || str.length > 500) return false;
+
+  // Reject email addresses
+  if (/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/i.test(str)) {
+    return false;
+  }
+
+  // Reject phone numbers (standard 10-digit formats, dashed, parenthesized)
+  if (/(?:\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}|\b\d{10}\b/.test(str)) {
+    return false;
+  }
+
+  // Reject internal administrative tokens and markers
+  if (/\b(?:internal|confidential|classified|secret|do not disclose|staff only|admin only|ssn|emp(?:loyee)?\s*id)\b/i.test(str)) {
+    return false;
+  }
+
+  // Reject server file paths and URLs
+  if (/(?:[a-zA-Z]:\\|\/(?:var|etc|home|usr|internal|private|secure)\/|https?:\/\/)/i.test(str)) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Sanitize an audit event's details object for public consumption.
+ * Strictly whitelists non-sensitive public fields, eliminates all arbitrary internal free-text
+ * (evidenceNotes, details.reason), and provides only validated, public-safe resolution information.
+ */
 function sanitizeDetailsForPublic(details = {}) {
   if (!details || typeof details !== 'object') {
     return {};
@@ -704,29 +761,39 @@ function sanitizeDetailsForPublic(details = {}) {
 
   const safeDetails = {};
 
-  if (details.departmentName) {
+  // 1. Safe structured attributes
+  if (details.departmentName && typeof details.departmentName === 'string') {
     safeDetails.departmentName = details.departmentName;
   }
-  if (details.resolutionNotes) {
-    safeDetails.resolutionNotes = details.resolutionNotes;
-  }
-  if (details.evidenceNotes) {
-    safeDetails.evidenceNotes = details.evidenceNotes;
-  }
-  if (details.actorRole) {
+  if (details.actorRole && typeof details.actorRole === 'string') {
     safeDetails.actorRole = details.actorRole;
   }
-  if (details.reason) {
-    safeDetails.reason = details.reason;
-  }
-  if (details.rating !== undefined) {
+  if (typeof details.rating === 'number') {
     safeDetails.rating = details.rating;
   }
-  if (details.resolutionQuality) {
+  if (details.resolutionQuality && typeof details.resolutionQuality === 'string') {
     safeDetails.resolutionQuality = details.resolutionQuality;
   }
 
+  // 2. Safe resolution confirmation:
+  // If resolution notes exist, do NOT assume arbitrary staff-entered notes are safe.
+  // Only expose content explicitly designed and validated as public-safe,
+  // or provide a standardized municipal resolution confirmation.
+  if (details.resolutionNotes) {
+    if (typeof details.publicResolutionNotes === 'string' && isPublicSafeText(details.publicResolutionNotes)) {
+      safeDetails.resolutionNotes = details.publicResolutionNotes.trim();
+    } else {
+      safeDetails.resolutionNotes = 'Work completed and resolved by municipal department.';
+    }
+  }
+
+  // Arbitrary free-text fields (evidenceNotes, reason, staffEmail, staffName) are never copied.
   return safeDetails;
+}
+
+function maskEmail(str) {
+  if (typeof str !== 'string') return str;
+  return str.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '[email-redacted]');
 }
 
 /**
@@ -743,6 +810,13 @@ function sanitizeDetailsForReporter(details = {}) {
   delete reporterDetails.email;
   delete reporterDetails.staff_email;
   delete reporterDetails.employeeEmail;
+
+  if (typeof reporterDetails.resolutionNotes === 'string') {
+    reporterDetails.resolutionNotes = maskEmail(reporterDetails.resolutionNotes);
+  }
+  if (typeof reporterDetails.evidenceNotes === 'string') {
+    reporterDetails.evidenceNotes = maskEmail(reporterDetails.evidenceNotes);
+  }
 
   return reporterDetails;
 }
@@ -805,6 +879,9 @@ export async function getIssueTimeline(issueId, currentUser = null) {
         const { email: _email, ...safeAssignee } = json.previousAssigneeId;
         json.previousAssigneeId = safeAssignee;
       }
+      if (typeof json.reason === 'string') {
+        json.reason = maskEmail(json.reason);
+      }
       json.details = sanitizeDetailsForReporter(json.details);
       return json;
     }
@@ -829,7 +906,10 @@ export async function getIssueTimeline(issueId, currentUser = null) {
     json.newAssigneeId = null;
     json.previousAssigneeId = null;
 
-    // Sanitize details object: strictly eliminate staffEmail, staffName, and personal identifiers
+    // Replace internal arbitrary free-text reason with standardized public event description
+    json.reason = PUBLIC_EVENT_DESCRIPTIONS[json.eventType] || 'Status updated';
+
+    // Sanitize details object: strictly eliminate free-text PII, staffEmail, staffName, and evidenceNotes
     json.details = sanitizeDetailsForPublic(json.details);
 
     return json;

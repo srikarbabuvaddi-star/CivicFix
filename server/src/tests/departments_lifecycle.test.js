@@ -830,6 +830,120 @@ describe('CivicFix Department, Staff Management & Issue Lifecycle Suite', () => 
       });
     });
 
+    it('proves deliberately sensitive data in reason, resolutionNotes, and evidenceNotes is never exposed to public visitors', async () => {
+      // 1. Citizen creates issue
+      const issueRes = await request(app)
+        .post('/api/v1/issues')
+        .set('Cookie', citizenCookie)
+        .set('x-csrf-token', citizenCsrfToken)
+        .send({
+          title: 'Burst Water Pipe with High Pressure',
+          description: 'Water spraying across the street near fire station.',
+          category: ISSUE_CATEGORIES.WATER,
+          location: { type: 'Point', coordinates: [77.59, 12.97], address: '500 Main Street' },
+          visibility: ISSUE_VISIBILITY.PUBLIC
+        });
+      const issueId = issueRes.body.data.id;
+
+      const dept = await Department.create({
+        name: 'Water Works Division',
+        normalizedName: 'water works division',
+        categoriesHandled: [ISSUE_CATEGORIES.WATER]
+      });
+      await User.updateOne({ _id: staff1UserId }, { departmentId: dept._id });
+
+      // 2. Admin assigns with sensitive text in reason
+      const sensitiveAssignReason = 'Assigned by Supervisor Alice (alice@civicfix.gov, tel: 555-0199) - Technician Dave (cell: 555-4321) dispatched with internal code SEC-DISP-9912.';
+      await request(app)
+        .post(`/api/v1/issues/${issueId}/assign`)
+        .set('Cookie', adminCookie)
+        .set('x-csrf-token', adminCsrfToken)
+        .send({
+          departmentId: dept._id.toString(),
+          assigneeId: staff1UserId,
+          reason: sensitiveAssignReason
+        });
+
+      // 3. Staff moves to in_progress
+      await request(app)
+        .post(`/api/v1/issues/${issueId}/transition`)
+        .set('Cookie', staff1Cookie)
+        .set('x-csrf-token', staff1CsrfToken)
+        .send({ status: ISSUE_STATUS.IN_PROGRESS });
+
+      // 4. Staff resolves with sensitive text in resolutionNotes and evidenceNotes
+      const sensitiveResolutionNotes = 'Replaced 4-inch main copper line. Work completed by Dave (dave@civicfix.gov, emergency: 555-9876). Internal work order #WO-99482-CONFIDENTIAL.';
+      const sensitiveEvidenceNotes = 'Inspection evidence on internal server: //internal-filer.gov/photos/dave_badge_88.jpg. Contact supervisor at 555-1122.';
+
+      await request(app)
+        .post(`/api/v1/issues/${issueId}/resolve`)
+        .set('Cookie', staff1Cookie)
+        .set('x-csrf-token', staff1CsrfToken)
+        .send({
+          resolutionNotes: sensitiveResolutionNotes,
+          evidenceNotes: sensitiveEvidenceNotes
+        });
+
+      // 5. Query timeline as unauthenticated public visitor
+      const pubRes = await request(app).get(`/api/v1/issues/${issueId}/timeline`);
+      expect(pubRes.status).toBe(200);
+
+      const pubRawJson = JSON.stringify(pubRes.body);
+
+      // Verify that NONE of this sensitive information appears in public timeline response
+      expect(pubRawJson).not.toContain('alice@civicfix.gov');
+      expect(pubRawJson).not.toContain('dave@civicfix.gov');
+      expect(pubRawJson).not.toContain('555-0199');
+      expect(pubRawJson).not.toContain('555-4321');
+      expect(pubRawJson).not.toContain('555-9876');
+      expect(pubRawJson).not.toContain('555-1122');
+      expect(pubRawJson).not.toContain('Technician Dave');
+      expect(pubRawJson).not.toContain('Supervisor Alice');
+      expect(pubRawJson).not.toContain('SEC-DISP-9912');
+      expect(pubRawJson).not.toContain('WO-99482');
+      expect(pubRawJson).not.toContain('CONFIDENTIAL');
+      expect(pubRawJson).not.toContain('internal-filer.gov');
+      expect(pubRawJson).not.toContain('dave_badge_88.jpg');
+
+      // Verify structure of public events
+      pubRes.body.data.forEach((event) => {
+        // Safe structured info is preserved
+        if (event.eventType === AUDIT_EVENT_TYPE.ASSIGNED) {
+          expect(event.details.departmentName).toBe('Water Works Division');
+          expect(event.reason).toBe('Issue assigned to handling department');
+        }
+        if (event.eventType === AUDIT_EVENT_TYPE.RESOLVED) {
+          expect(event.reason).toBe('Resolution completed by handling department');
+          expect(event.details.resolutionNotes).toBe('Work completed and resolved by municipal department.');
+          expect(event.details.evidenceNotes).toBeUndefined();
+        }
+        // Evidence notes must never be exposed publicly
+        expect(event.details?.evidenceNotes).toBeUndefined();
+      });
+
+      // 6. Query timeline as Administrator (full audit provenance must be preserved)
+      const adminRes = await request(app)
+        .get(`/api/v1/issues/${issueId}/timeline`)
+        .set('Cookie', adminCookie);
+      expect(adminRes.status).toBe(200);
+
+      const adminRawJson = JSON.stringify(adminRes.body);
+      expect(adminRawJson).toContain('alice@civicfix.gov');
+      expect(adminRawJson).toContain('dave@civicfix.gov');
+      expect(adminRawJson).toContain('555-0199');
+      expect(adminRawJson).toContain('555-9876');
+      expect(adminRawJson).toContain('WO-99482-CONFIDENTIAL');
+      expect(adminRawJson).toContain('internal-filer.gov');
+
+      // 7. Verify MongoDB raw records remain completely untouched and unmodified
+      const rawAssignedEvent = await IssueEvent.findOne({ issueId, eventType: AUDIT_EVENT_TYPE.ASSIGNED }).lean();
+      expect(rawAssignedEvent.reason).toBe(sensitiveAssignReason);
+
+      const rawResolvedEvent = await IssueEvent.findOne({ issueId, eventType: AUDIT_EVENT_TYPE.RESOLVED }).lean();
+      expect(rawResolvedEvent.details.resolutionNotes).toBe(sensitiveResolutionNotes);
+      expect(rawResolvedEvent.details.evidenceNotes).toBe(sensitiveEvidenceNotes);
+    });
+
     it('separately verifies timeline access for public visitor, reporting citizen, staff technician, and administrator', async () => {
       // Create issue
       const issueRes = await request(app)
