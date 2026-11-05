@@ -60,18 +60,7 @@ export function createApp(customSessionStoreUri = null) {
 
   app.use(cookieParser());
 
-  // Persistent Server-side Sessions
-  app.use(configureSession(customSessionStoreUri));
-
-  // CSRF Protection
-  app.use(csrfProtection);
-
-  // Apply general rate limiter to API routes in non-test environments
-  if (!env.isTest) {
-    app.use('/api', generalLimiter);
-  }
-
-  // Liveness check handlers (process uptime & health)
+  // Liveness check handlers (process uptime & health - independent of MongoDB)
   const livenessHandler = (req, res) => {
     return sendSuccess(
       res,
@@ -106,10 +95,22 @@ export function createApp(customSessionStoreUri = null) {
     });
   };
 
+  // Register liveness and readiness health-check routes before MongoDB session and CSRF middleware
   app.get('/health', livenessHandler);
   app.get('/api/v1/health', livenessHandler);
   app.get('/ready', readinessHandler);
   app.get('/api/v1/ready', readinessHandler);
+
+  // Persistent Server-side Sessions (backed by MongoStore)
+  app.use(configureSession(customSessionStoreUri));
+
+  // CSRF Protection
+  app.use(csrfProtection);
+
+  // Apply general rate limiter to API routes in non-test environments
+  if (!env.isTest) {
+    app.use('/api', generalLimiter);
+  }
 
   // API modules
   app.use('/api/v1/auth', authRoutes);

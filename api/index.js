@@ -3,7 +3,27 @@ import { connectDB } from '../server/src/config/db.js';
 
 let appInstance = null;
 
+function isLivenessRoute(url = '') {
+  const path = url.split('?')[0];
+  return path === '/health' || path === '/api/v1/health' || path.endsWith('/health');
+}
+
+function isReadinessRoute(url = '') {
+  const path = url.split('?')[0];
+  return path === '/ready' || path === '/api/v1/ready' || path.endsWith('/ready');
+}
+
 export default async function handler(req, res) {
+  if (!appInstance) {
+    appInstance = createApp();
+  }
+
+  // Liveness health-check requests must work independently of MongoDB availability
+  if (isLivenessRoute(req.url)) {
+    return appInstance(req, res);
+  }
+
+  // Attempt database connection for readiness checks and stateful routes
   try {
     await connectDB();
   } catch (err) {
@@ -12,14 +32,26 @@ export default async function handler(req, res) {
       err.message
     );
 
-    return res.status(503).json({
-      success: false,
-      message: 'Service temporarily unavailable. Please try again later.'
-    });
-  }
+    // For readiness check, delegate to Express to return structured readiness response
+    if (isReadinessRoute(req.url)) {
+      return appInstance(req, res);
+    }
 
-  if (!appInstance) {
-    appInstance = createApp();
+    if (typeof res.status === 'function') {
+      return res.status(503).json({
+        success: false,
+        message: 'Service temporarily unavailable. Please try again later.'
+      });
+    }
+
+    res.statusCode = 503;
+    res.setHeader('Content-Type', 'application/json');
+    return res.end(
+      JSON.stringify({
+        success: false,
+        message: 'Service temporarily unavailable. Please try again later.'
+      })
+    );
   }
 
   return appInstance(req, res);
