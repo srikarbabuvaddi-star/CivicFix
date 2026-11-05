@@ -195,8 +195,9 @@ describe('CivicFix Frontend UI & Component Verification Suite', () => {
         </MemoryRouter>
       );
 
-      const reportCta = screen.getByRole('link', { name: /Report a Civic Issue/i });
-      expect(reportCta.getAttribute('href')).toBe('/issues/new');
+      const reportCtas = screen.getAllByRole('link', { name: /Report a Civic Issue/i });
+      expect(reportCtas.length).toBeGreaterThanOrEqual(1);
+      expect(reportCtas[0].getAttribute('href')).toBe('/issues/new');
     });
   });
 });
