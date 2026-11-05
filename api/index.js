@@ -7,7 +7,15 @@ export default async function handler(req, res) {
   try {
     await connectDB();
   } catch (err) {
-    console.error('Database connection error in Vercel serverless function:', err.message);
+    console.error(
+      'Database connection error in Vercel serverless function:',
+      err.message
+    );
+
+    return res.status(503).json({
+      success: false,
+      message: 'Service temporarily unavailable. Please try again later.'
+    });
   }
 
   if (!appInstance) {
@@ -16,4 +24,3 @@ export default async function handler(req, res) {
 
   return appInstance(req, res);
 }
-
