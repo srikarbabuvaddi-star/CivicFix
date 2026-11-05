@@ -42,6 +42,7 @@ jobs:
         run: npm test
         env:
           NODE_ENV: test
+          MONGODB_URI: mongodb://127.0.0.1:27017/civicfix_ci_test
           TEST_MONGODB_URI: mongodb://127.0.0.1:27017/civicfix_ci_test
           SESSION_SECRET: ci_test_session_secret_32_characters_minimum_required!
 

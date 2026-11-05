@@ -9,11 +9,27 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config();
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
+const isTest = process.env.NODE_ENV === 'test';
+
+// In automated test environments (Vitest, CI), provide test-safe defaults if .env is not present
+const defaultTestDbUri = process.env.TEST_MONGODB_URI || 'mongodb://127.0.0.1:27017/civicfix_test_automated';
+const defaultTestSecret = 'ci_test_session_secret_32_characters_minimum_required!';
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().positive().default(5000),
-  MONGODB_URI: z.string().min(1, 'MONGODB_URI is required'),
-  SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters long for cryptographic security'),
+  MONGODB_URI: z
+    .string()
+    .default(() => (isTest ? defaultTestDbUri : (process.env.TEST_MONGODB_URI || '')))
+    .refine((val) => Boolean(val && val.length > 0), {
+      message: 'MONGODB_URI is required. Please set MONGODB_URI in your environment or .env file.'
+    }),
+  SESSION_SECRET: z
+    .string()
+    .default(() => (isTest ? defaultTestSecret : ''))
+    .refine((val) => Boolean(val && val.length >= 32), {
+      message: 'SESSION_SECRET must be at least 32 characters long for cryptographic security'
+    }),
   SESSION_COOKIE_NAME: z.string().default('civicfix.sid'),
   SESSION_TTL_HOURS: z.coerce.number().positive().default(24),
   CLIENT_ORIGIN: z.string().url().default('http://localhost:5173'),
@@ -61,7 +77,9 @@ try {
     console.error('========================================');
     console.error(formattedErrors);
     console.error('Please configure your .env file according to .env.example\n');
-    process.exit(1);
+    if (!isTest) {
+      process.exit(1);
+    }
   }
   throw error;
 }
