@@ -144,7 +144,7 @@ export function RegisterPage() {
             id="name"
             name="name"
             label="Full Name"
-            placeholder="Jane Doe"
+            placeholder="Enter your full name"
             value={formData.name}
             onChange={handleChange}
             error={errors.name}
@@ -157,7 +157,7 @@ export function RegisterPage() {
             name="email"
             type="email"
             label="Email Address"
-            placeholder="jane.doe@example.com"
+            placeholder="Enter your email address"
             value={formData.email}
             onChange={handleChange}
             error={errors.email}
@@ -170,7 +170,7 @@ export function RegisterPage() {
             name="password"
             type="password"
             label="Password"
-            placeholder="••••••••••••"
+            placeholder="Create a password (min 8 characters)"
             value={formData.password}
             onChange={handleChange}
             error={errors.password}
@@ -184,7 +184,7 @@ export function RegisterPage() {
             name="confirmPassword"
             type="password"
             label="Confirm Password"
-            placeholder="••••••••••••"
+            placeholder="Re-enter your password"
             value={formData.confirmPassword}
             onChange={handleChange}
             error={errors.confirmPassword}

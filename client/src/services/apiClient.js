@@ -89,8 +89,8 @@ async function request(endpoint, options = {}) {
   });
 
   let data = null;
-  const contentType = response.headers.get('content-type');
-  if (contentType && contentType.includes('application/json')) {
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
     data = await response.json();
   } else {
     data = await response.text();
@@ -102,10 +102,31 @@ async function request(endpoint, options = {}) {
   }
 
   if (!response.ok) {
-    const errorMessage = data?.message || `Request failed with status ${response.status}`;
-    const details = data?.details || null;
+    let errorMessage = (typeof data === 'object' && data?.message) ? data.message : null;
+
+    if (!errorMessage) {
+      if (response.status === 405) {
+        errorMessage = 'Authentication Error (HTTP 405 Method Not Allowed): The API request hit a static hosting route instead of the live backend server. If deploying to Vercel, please set VITE_API_URL in your Vercel Project Environment Variables to point to your live backend API (e.g. https://your-backend.onrender.com/api/v1).';
+      } else if (response.status === 404) {
+        errorMessage = `API Endpoint Not Found (HTTP 404): ${url}`;
+      } else if (response.status >= 500) {
+        errorMessage = `Backend Service Error (HTTP ${response.status}). Please check backend service logs.`;
+      } else {
+        errorMessage = `Request failed with status ${response.status}`;
+      }
+    }
+
+    const details = (typeof data === 'object' && data?.details) ? data.details : null;
     const correlationId = response.headers.get('x-correlation-id');
     throw new ApiError(errorMessage, response.status, details, data, correlationId);
+  }
+
+  // Guard against HTML returned on HTTP 200 (e.g. SPA index.html fallback rewrite on Vercel)
+  if (contentType.includes('text/html') || (typeof data === 'string' && data.trim().startsWith('<!DOCTYPE'))) {
+    throw new ApiError(
+      'API Error: The server returned HTML instead of JSON. The backend server might be offline, unreachable, or VITE_API_URL is not configured in your deployment settings.',
+      502
+    );
   }
 
   return data;

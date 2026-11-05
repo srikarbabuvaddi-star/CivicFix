@@ -6,8 +6,13 @@
   "installCommand": "npm install",
   "rewrites": [
     {
+      "source": "/api/(.*)",
+      "destination": "/api/index.js"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
   ]
 }
+

@@ -117,6 +117,15 @@
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
+.form-input::placeholder,
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-slate-400);
+  opacity: 0.55;
+  font-style: normal;
+  font-weight: 400;
+}
+
 .form-input:focus {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15);

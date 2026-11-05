@@ -47,6 +47,12 @@ export function LoginPage() {
     }
   };
 
+  const handlePrefill = (email, password) => {
+    setFormData({ email, password });
+    setErrors({});
+    if (serverError) setServerError(null);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validateForm()) return;
@@ -106,7 +112,7 @@ export function LoginPage() {
             name="email"
             type="email"
             label="Email Address"
-            placeholder="citizen@example.com"
+            placeholder="Enter your registered email address"
             value={formData.email}
             onChange={handleChange}
             error={errors.email}
@@ -119,7 +125,7 @@ export function LoginPage() {
             name="password"
             type="password"
             label="Password"
-            placeholder="••••••••••••"
+            placeholder="Enter your password"
             value={formData.password}
             onChange={handleChange}
             error={errors.password}
@@ -138,6 +144,79 @@ export function LoginPage() {
             <span>Sign In to CivicFix</span>
           </Button>
         </form>
+
+        {/* Demo Credentials Quick Fill Panel */}
+        <div
+          style={{
+            marginTop: '1.25rem',
+            padding: '0.85rem 1rem',
+            backgroundColor: '#f8fafc',
+            border: '1px solid var(--color-slate-200)',
+            borderRadius: 'var(--radius-md)'
+          }}
+        >
+          <div
+            style={{
+              fontSize: '0.8rem',
+              fontWeight: 600,
+              color: 'var(--color-navy-800)',
+              marginBottom: '0.5rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}
+          >
+            <span>Quick Fill Testing Credentials:</span>
+            <span style={{ fontSize: '0.72rem', color: 'var(--color-slate-400)', fontWeight: 500 }}>Click to prefill</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem' }}>
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              style={{
+                fontSize: '0.75rem',
+                padding: '0.35rem 0.4rem',
+                backgroundColor: '#ffffff',
+                justifyContent: 'center',
+                borderColor: formData.email === 'citizen@civicfix.org' ? 'var(--color-primary)' : 'var(--color-slate-200)',
+                color: formData.email === 'citizen@civicfix.org' ? 'var(--color-primary)' : 'var(--color-navy-800)'
+              }}
+              onClick={() => handlePrefill('citizen@civicfix.org', 'CitizenPassword123!')}
+            >
+              Citizen
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              style={{
+                fontSize: '0.75rem',
+                padding: '0.35rem 0.4rem',
+                backgroundColor: '#ffffff',
+                justifyContent: 'center',
+                borderColor: formData.email === 'staff@civicfix.gov' ? 'var(--color-primary)' : 'var(--color-slate-200)',
+                color: formData.email === 'staff@civicfix.gov' ? 'var(--color-primary)' : 'var(--color-navy-800)'
+              }}
+              onClick={() => handlePrefill('staff@civicfix.gov', 'StaffPassword123!')}
+            >
+              Staff
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              style={{
+                fontSize: '0.75rem',
+                padding: '0.35rem 0.4rem',
+                backgroundColor: '#ffffff',
+                justifyContent: 'center',
+                borderColor: formData.email === 'admin@civicfix.gov' ? 'var(--color-primary)' : 'var(--color-slate-200)',
+                color: formData.email === 'admin@civicfix.gov' ? 'var(--color-primary)' : 'var(--color-navy-800)'
+              }}
+              onClick={() => handlePrefill('admin@civicfix.gov', 'AdminPassword123!')}
+            >
+              Admin
+            </button>
+          </div>
+        </div>
 
         <div className="auth-footer">
           <p>

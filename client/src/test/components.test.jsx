@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { StatusBadge } from '../components/StatusBadge.jsx';
@@ -160,6 +160,43 @@ describe('CivicFix Frontend UI & Component Verification Suite', () => {
       );
 
       expect(screen.getByText('Privileged Administrative Console')).toBeDefined();
+    });
+  });
+
+  describe('8. LandingPage & LoginPage Flow Verification', () => {
+    it('verifies LoginPage renders clear descriptive placeholders and quick-fill buttons', async () => {
+      const { LoginPage } = await import('../pages/LoginPage.jsx');
+      render(
+        <MemoryRouter>
+          <AuthContext.Provider value={{ user: null, isAuthenticated: false, isLoading: false, login: vi.fn() }}>
+            <LoginPage />
+          </AuthContext.Provider>
+        </MemoryRouter>
+      );
+
+      const emailInput = screen.getByLabelText(/Email Address/i);
+      const passwordInput = screen.getByLabelText(/Password/i);
+
+      expect(emailInput.getAttribute('placeholder')).toBe('Enter your registered email address');
+      expect(passwordInput.getAttribute('placeholder')).toBe('Enter your password');
+      expect(screen.getByText(/Quick Fill Testing Credentials/i)).toBeDefined();
+      expect(screen.getByRole('button', { name: 'Citizen' })).toBeDefined();
+      expect(screen.getByRole('button', { name: 'Staff' })).toBeDefined();
+      expect(screen.getByRole('button', { name: 'Admin' })).toBeDefined();
+    });
+
+    it('verifies LandingPage hero CTA routes to /issues/new', async () => {
+      const { LandingPage } = await import('../pages/LandingPage.jsx');
+      render(
+        <MemoryRouter>
+          <AuthContext.Provider value={{ user: null, isAuthenticated: false, isLoading: false }}>
+            <LandingPage />
+          </AuthContext.Provider>
+        </MemoryRouter>
+      );
+
+      const reportCta = screen.getByRole('link', { name: /Report a Civic Issue/i });
+      expect(reportCta.getAttribute('href')).toBe('/issues/new');
     });
   });
 });

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { ShieldCheck, Menu, X, LogOut, LayoutDashboard, User, Compass, PlusCircle, FileText } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth.js';
 import { Button } from './Button.jsx';
@@ -11,6 +11,7 @@ export function Navbar() {
   const { user, isAuthenticated, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLogout = async () => {
     await logout();
@@ -82,12 +83,16 @@ export function Navbar() {
           <Link
             to={ROUTES.EXPLORE}
             style={{
-              color: '#cbd5e1',
-              fontWeight: 500,
+              color: location.pathname === ROUTES.EXPLORE ? '#2dd4bf' : '#cbd5e1',
+              fontWeight: location.pathname === ROUTES.EXPLORE ? 700 : 500,
               fontSize: '0.95rem',
               display: 'flex',
               alignItems: 'center',
-              gap: '0.35rem'
+              gap: '0.35rem',
+              padding: '0.35rem 0.6rem',
+              borderRadius: 'var(--radius-md)',
+              backgroundColor: location.pathname === ROUTES.EXPLORE ? 'rgba(45, 212, 191, 0.1)' : 'transparent',
+              transition: 'all 0.15s ease'
             }}
           >
             <Compass size={16} />
@@ -214,7 +219,11 @@ export function Navbar() {
           <Link
             to={ROUTES.EXPLORE}
             onClick={() => setMobileMenuOpen(false)}
-            style={{ color: '#cbd5e1', padding: '0.4rem 0' }}
+            style={{
+              color: location.pathname === ROUTES.EXPLORE ? '#2dd4bf' : '#cbd5e1',
+              fontWeight: location.pathname === ROUTES.EXPLORE ? 700 : 500,
+              padding: '0.4rem 0'
+            }}
           >
             Explore Public Issues
           </Link>

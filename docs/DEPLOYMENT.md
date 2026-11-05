@@ -126,13 +126,32 @@ docker-compose exec api npm run seed:admin
 5. Add Environment Variables from Section 2.1.
 6. Configure health check path: `/api/v1/health`.
 
-### 5.3 Frontend on Vercel
-1. Import repository on Vercel.
-2. Root directory: `client`.
-3. Framework preset: **Vite**.
-4. Build command: `npm run build`.
-5. Output directory: `dist`.
-6. Add environment variable: `VITE_API_URL=https://<your-backend-domain>/api/v1`.
+### 5.3 Frontend on Vercel & HTTP 405 Troubleshooting
+
+#### Why HTTP 405 Occurs on Static Hosts
+If `VITE_API_URL` is not set or defaults to relative `/api/v1`, Vercel's SPA catch-all rewrite rule (`/(.*) -> /index.html`) directs POST/PUT/DELETE requests (like `/api/v1/auth/login`) to the static `/index.html` file. Static asset servers reject state-changing HTTP write requests with **HTTP 405 Method Not Allowed**.
+
+#### Deployment Steps on Vercel:
+1. **Option 1: Deploy Full Monorepo from Root (Recommended)**
+   - Root directory: `.`
+   - Build command: `npm run build --workspace=client`
+   - Output directory: `client/dist`
+   - Install command: `npm install`
+   - In `vercel.json`, `/api/(.*)` routes to `/api/index.js` (Vercel Serverless Function) and all client routes fallback to `/index.html`.
+   - Add Environment Variables in Vercel Dashboard:
+     - `MONGODB_URI`: `mongodb+srv://...`
+     - `SESSION_SECRET`: `your_random_32_character_secret`
+     - `NODE_ENV`: `production`
+
+2. **Option 2: Deploy Frontend on Vercel with External Backend (Render/Railway/Fly.io)**
+   - In Vercel Project Settings -> **Environment Variables**:
+     - `VITE_API_URL`: `https://your-backend-api.onrender.com/api/v1`
+   - On the Backend host (Render/Railway):
+     - `CLIENT_ORIGIN`: `https://your-app.vercel.app`
+     - `ALLOWED_ORIGINS`: `https://your-app.vercel.app`
+     - `COOKIE_SAME_SITE`: `none` (Required for cross-domain cookies)
+     - `TRUST_PROXY`: `1`
+   - Redeploy the Vercel project so Vite compiles `VITE_API_URL` into the frontend build.
 
 ---
 

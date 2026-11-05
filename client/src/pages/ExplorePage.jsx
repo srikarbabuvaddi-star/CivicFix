@@ -80,67 +80,93 @@ export function ExplorePage() {
 
   return (
     <div style={{ paddingBottom: '3rem' }}>
-      {/* Hero Header */}
+      {/* Explorer Page Application Header */}
       <div
         style={{
-          background: 'linear-gradient(180deg, var(--color-navy-950) 0%, var(--color-navy-900) 100%)',
-          color: 'var(--color-white)',
-          padding: '3rem 0',
-          marginBottom: '2.5rem',
-          borderRadius: 'var(--radius-lg)',
-          textAlign: 'center',
-          boxShadow: 'var(--shadow-md)'
+          backgroundColor: '#ffffff',
+          borderBottom: '1px solid var(--color-slate-200)',
+          padding: '2rem 0',
+          marginBottom: '2rem'
         }}
       >
-        <div className="container" style={{ maxWidth: '720px' }}>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              color: '#2dd4bf',
-              fontSize: '0.85rem',
-              fontWeight: 700,
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              marginBottom: '0.75rem'
-            }}
-          >
-            <ShieldCheck size={18} />
-            <span>Community Transparency Portal</span>
+        <div
+          className="container"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '1.25rem'
+          }}
+        >
+          <div>
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                color: 'var(--color-primary)',
+                fontSize: '0.8rem',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                marginBottom: '0.4rem'
+              }}
+            >
+              <ShieldCheck size={16} />
+              <span>Public Transparency Feed</span>
+            </div>
+            <h1
+              style={{
+                fontSize: '1.85rem',
+                fontWeight: 800,
+                color: 'var(--color-navy-900)',
+                letterSpacing: '-0.02em',
+                marginBottom: '0.35rem'
+              }}
+            >
+              Civic Issues Explorer & Public Board
+            </h1>
+            <p
+              style={{
+                color: 'var(--color-slate-600)',
+                fontSize: '0.95rem',
+                maxWidth: '680px',
+                margin: 0
+              }}
+            >
+              Real-time feed of community-reported infrastructure defects, sanitation requests, and street repairs across the municipality.
+            </p>
           </div>
 
-          <h1
-            style={{
-              fontSize: '2.25rem',
-              fontWeight: 800,
-              letterSpacing: '-0.03em',
-              marginBottom: '0.75rem',
-              color: 'var(--color-white)'
-            }}
-          >
-            Explore Public Civic Reports
-          </h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <Link to={ROUTES.CREATE_ISSUE} className="btn btn-primary">
+              <PlusCircle size={16} />
+              <span>Report a Civic Issue</span>
+            </Link>
+          </div>
+        </div>
+      </div>
 
-          <p
-            style={{
-              color: '#cbd5e1',
-              fontSize: '1.05rem',
-              lineHeight: 1.6,
-              marginBottom: '1.75rem'
-            }}
-          >
-            Review infrastructure defects, sanitation requests, and street repairs reported across your municipality.
-          </p>
-
-          {/* Search bar */}
+      <div className="container">
+        {/* Search & Query Controls Bar */}
+        <div
+          style={{
+            backgroundColor: 'var(--color-white)',
+            border: '1px solid var(--color-slate-200)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '1.25rem',
+            marginBottom: '1.5rem',
+            boxShadow: 'var(--shadow-sm)'
+          }}
+        >
+          {/* Top Row: Search */}
           <form
             onSubmit={handleSearchSubmit}
             style={{
               display: 'flex',
               gap: '0.5rem',
-              maxWidth: '560px',
-              margin: '0 auto'
+              marginBottom: '1rem'
             }}
           >
             <div style={{ position: 'relative', flex: 1 }}>
@@ -157,166 +183,168 @@ export function ExplorePage() {
               <input
                 type="search"
                 className="form-input"
-                placeholder="Search issues by title or description..."
+                placeholder="Search issues by title, description, or landmark..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 style={{
-                  paddingLeft: '2.75rem',
-                  backgroundColor: 'var(--color-white)',
-                  color: 'var(--color-navy-900)',
-                  border: 'none',
-                  boxShadow: 'var(--shadow-lg)'
+                  paddingLeft: '2.75rem'
                 }}
               />
             </div>
             <Button type="submit" variant="primary">
               Search
             </Button>
-          </form>
-        </div>
-      </div>
-
-      <div className="container">
-        {/* Controls Bar: Filters & View Switcher */}
-        <div
-          style={{
-            backgroundColor: 'var(--color-white)',
-            border: '1px solid var(--color-slate-200)',
-            borderRadius: 'var(--radius-lg)',
-            padding: '1.25rem',
-            marginBottom: '2rem',
-            boxShadow: 'var(--shadow-sm)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '1rem'
-          }}
-        >
-          {/* Filters */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--color-navy-800)', fontWeight: 600, fontSize: '0.9rem' }}>
-              <Filter size={16} />
-              <span>Filters:</span>
-            </div>
-
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="form-input"
-              style={{ width: 'auto', minWidth: '160px' }}
-              aria-label="Filter by category"
-            >
-              <option value="">All Categories</option>
-              {Object.entries(CATEGORY_LABELS).map(([k, l]) => (
-                <option key={k} value={k}>{l}</option>
-              ))}
-            </select>
-
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className="form-input"
-              style={{ width: 'auto', minWidth: '150px' }}
-              aria-label="Filter by status"
-            >
-              <option value="">All Statuses</option>
-              {Object.entries(STATUS_LABELS).map(([k, l]) => (
-                <option key={k} value={k}>{l}</option>
-              ))}
-            </select>
-
-            <select
-              value={timePeriod}
-              onChange={(e) => setTimePeriod(e.target.value)}
-              className="form-input"
-              style={{ width: 'auto', minWidth: '140px' }}
-              aria-label="Filter by time period"
-            >
-              <option value="all">All Time</option>
-              <option value="7d">Last 7 Days</option>
-              <option value="30d">Last 30 Days</option>
-              <option value="90d">Last 90 Days</option>
-            </select>
-
-            {hasActiveFilters && (
+            {submittedSearch && (
               <Button
-                variant="ghost"
-                size="sm"
-                onClick={clearFilters}
-                style={{ color: 'var(--color-slate-500)', fontSize: '0.85rem' }}
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setSearchTerm('');
+                  setSubmittedSearch('');
+                }}
               >
-                Reset Filters
+                Clear
               </Button>
             )}
-          </div>
+          </form>
 
-          {/* View Mode Toggle & Counter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--color-slate-500)' }}>
-              {pagination.total} published {pagination.total === 1 ? 'report' : 'reports'}
-            </span>
+          {/* Bottom Row: Filters & View Switcher */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '1rem',
+              paddingTop: '0.75rem',
+              borderTop: '1px solid var(--color-slate-100)'
+            }}
+          >
+            {/* Filter Dropdowns */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--color-navy-800)', fontWeight: 600, fontSize: '0.85rem' }}>
+                <Filter size={15} />
+                <span>Filters:</span>
+              </div>
 
-            {/* List / Map switcher */}
-            <div
-              style={{
-                display: 'inline-flex',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--color-slate-200)',
-                overflow: 'hidden'
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setViewMode('list')}
-                style={{
-                  padding: '0.4rem 0.75rem',
-                  fontSize: '0.85rem',
-                  fontWeight: 600,
-                  border: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.35rem',
-                  cursor: 'pointer',
-                  backgroundColor: viewMode === 'list' ? 'var(--color-primary)' : '#ffffff',
-                  color: viewMode === 'list' ? '#ffffff' : 'var(--color-slate-600)',
-                  transition: 'background-color 0.15s ease'
-                }}
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="form-input"
+                style={{ width: 'auto', minWidth: '150px', fontSize: '0.85rem', padding: '0.45rem 0.65rem' }}
+                aria-label="Filter by category"
               >
-                <List size={15} />
-                <span>List</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('map')}
-                style={{
-                  padding: '0.4rem 0.75rem',
-                  fontSize: '0.85rem',
-                  fontWeight: 600,
-                  border: 'none',
-                  borderLeft: '1px solid var(--color-slate-200)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.35rem',
-                  cursor: 'pointer',
-                  backgroundColor: viewMode === 'map' ? 'var(--color-primary)' : '#ffffff',
-                  color: viewMode === 'map' ? '#ffffff' : 'var(--color-slate-600)',
-                  transition: 'background-color 0.15s ease'
-                }}
+                <option value="">All Categories</option>
+                {Object.entries(CATEGORY_LABELS).map(([k, l]) => (
+                  <option key={k} value={k}>{l}</option>
+                ))}
+              </select>
+
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="form-input"
+                style={{ width: 'auto', minWidth: '140px', fontSize: '0.85rem', padding: '0.45rem 0.65rem' }}
+                aria-label="Filter by status"
               >
-                <Map size={15} />
-                <span>Map</span>
-              </button>
+                <option value="">All Statuses</option>
+                {Object.entries(STATUS_LABELS).map(([k, l]) => (
+                  <option key={k} value={k}>{l}</option>
+                ))}
+              </select>
+
+              <select
+                value={timePeriod}
+                onChange={(e) => setTimePeriod(e.target.value)}
+                className="form-input"
+                style={{ width: 'auto', minWidth: '130px', fontSize: '0.85rem', padding: '0.45rem 0.65rem' }}
+                aria-label="Filter by time period"
+              >
+                <option value="all">All Time</option>
+                <option value="7d">Last 7 Days</option>
+                <option value="30d">Last 30 Days</option>
+                <option value="90d">Last 90 Days</option>
+              </select>
+
+              {hasActiveFilters && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearFilters}
+                  style={{ color: 'var(--color-slate-500)', fontSize: '0.8rem' }}
+                >
+                  Reset Filters
+                </Button>
+              )}
             </div>
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => fetchPublicIssues(pagination.page)}
-              title="Refresh public reports"
-            >
-              <RefreshCw size={14} />
-            </Button>
+            {/* Results Counter & View Switcher */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-navy-800)' }}>
+                {pagination.total} {pagination.total === 1 ? 'Report' : 'Reports'}
+              </span>
+
+              {/* List / Map switcher */}
+              <div
+                style={{
+                  display: 'inline-flex',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--color-slate-200)',
+                  overflow: 'hidden'
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setViewMode('list')}
+                  style={{
+                    padding: '0.4rem 0.75rem',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    border: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    cursor: 'pointer',
+                    backgroundColor: viewMode === 'list' ? 'var(--color-primary)' : '#ffffff',
+                    color: viewMode === 'list' ? '#ffffff' : 'var(--color-slate-600)',
+                    transition: 'background-color 0.15s ease'
+                  }}
+                >
+                  <List size={15} />
+                  <span>List</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('map')}
+                  style={{
+                    padding: '0.4rem 0.75rem',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    border: 'none',
+                    borderLeft: '1px solid var(--color-slate-200)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    cursor: 'pointer',
+                    backgroundColor: viewMode === 'map' ? 'var(--color-primary)' : '#ffffff',
+                    color: viewMode === 'map' ? '#ffffff' : 'var(--color-slate-600)',
+                    transition: 'background-color 0.15s ease'
+                  }}
+                >
+                  <Map size={15} />
+                  <span>Map</span>
+                </button>
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fetchPublicIssues(pagination.page)}
+                title="Refresh public reports"
+              >
+                <RefreshCw size={14} />
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -348,8 +376,9 @@ export function ExplorePage() {
                   <span>Submit First Issue</span>
                 </Link>
               ) : (
-                <Link to={ROUTES.REGISTER} className="btn btn-primary btn-sm">
-                  <span>Register to Report an Issue</span>
+                <Link to={ROUTES.CREATE_ISSUE} className="btn btn-primary btn-sm">
+                  <PlusCircle size={15} />
+                  <span>Report a Civic Issue</span>
                 </Link>
               )
             }

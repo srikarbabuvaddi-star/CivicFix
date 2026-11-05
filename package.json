@@ -17,7 +17,8 @@
     "test:client": "npm run test --workspace=client",
     "test:watch": "npm run test:watch --workspace=server",
     "lint": "npm run lint --workspace=server && npm run lint --workspace=client",
-    "seed:admin": "npm run seed:admin --workspace=server"
+    "seed:admin": "npm run seed:admin --workspace=server",
+    "seed:demo": "node server/src/scripts/seed-demo-users.js"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

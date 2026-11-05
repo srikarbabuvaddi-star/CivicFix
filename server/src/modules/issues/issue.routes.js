@@ -19,8 +19,9 @@ import { ROLES } from '../../config/constants.js';
 
 const router = Router();
 
-// Public listing of published civic reports
+// Public listing of published civic reports (supports both / and /public)
 router.get('/', validate(queryIssuesSchema, 'query'), issueController.getPublicIssues);
+router.get('/public', validate(queryIssuesSchema, 'query'), issueController.getPublicIssues);
 
 // Citizen authenticated routes (must precede /:id)
 router.get('/mine', authenticate, validate(queryIssuesSchema, 'query'), issueController.getMyIssues);

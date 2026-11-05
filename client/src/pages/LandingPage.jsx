@@ -16,9 +16,7 @@ import { ROUTES, getDashboardPathForRole } from '../utils/constants.js';
 export function LandingPage() {
   const { user, isAuthenticated } = useAuth();
 
-  const reportLink = isAuthenticated
-    ? getDashboardPathForRole(user.role)
-    : ROUTES.REGISTER;
+  const reportLink = ROUTES.CREATE_ISSUE;
 
   return (
     <div>
@@ -445,12 +443,19 @@ export function LandingPage() {
             Help build a cleaner, safer, more responsive neighborhood. Your real-world reports initiate immediate accountability.
           </p>
           <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-            <Link to={ROUTES.REGISTER} className="btn btn-primary btn-lg">
-              Create Citizen Account
+            <Link to={ROUTES.CREATE_ISSUE} className="btn btn-primary btn-lg">
+              <FileText size={18} />
+              <span>Report a Civic Issue</span>
             </Link>
-            <Link to={ROUTES.LOGIN} className="btn btn-outline btn-lg" style={{ color: '#fff', borderColor: 'rgba(255, 255, 255, 0.3)' }}>
-              Sign In to Existing Account
-            </Link>
+            {isAuthenticated ? (
+              <Link to={getDashboardPathForRole(user?.role)} className="btn btn-outline btn-lg" style={{ color: '#fff', borderColor: 'rgba(255, 255, 255, 0.3)' }}>
+                Go to Workspace Console
+              </Link>
+            ) : (
+              <Link to={ROUTES.REGISTER} className="btn btn-outline btn-lg" style={{ color: '#fff', borderColor: 'rgba(255, 255, 255, 0.3)' }}>
+                Create Citizen Account
+              </Link>
+            )}
           </div>
         </div>
       </section>
