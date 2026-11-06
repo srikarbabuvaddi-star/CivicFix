@@ -46,8 +46,6 @@ services:
   - type: web
     name: civicfix-web
     runtime: static
-    plan: free
-    region: oregon
     buildCommand: npm install --workspace=client && npm run build --workspace=client
     staticPublishPath: client/dist
     autoDeploy: true
@@ -61,3 +59,4 @@ services:
           type: web
           name: civicfix-api
           envVarKey: RENDER_EXTERNAL_URL
+
