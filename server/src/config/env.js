@@ -32,7 +32,13 @@ const envSchema = z.object({
     }),
   SESSION_COOKIE_NAME: z.string().default('civicfix.sid'),
   SESSION_TTL_HOURS: z.coerce.number().positive().default(24),
-  CLIENT_ORIGIN: z.string().url().default('http://localhost:5173'),
+  CLIENT_ORIGIN: z
+    .string()
+    .transform((val) =>
+      val && !val.startsWith('http://') && !val.startsWith('https://') ? `https://${val}` : val
+    )
+    .pipe(z.string().url())
+    .default('http://localhost:5173'),
   ALLOWED_ORIGINS: z.string().optional().default(''),
   COOKIE_SAME_SITE: z.enum(['lax', 'strict', 'none']).default('lax'),
   TRUST_PROXY: z.coerce.number().default(1),

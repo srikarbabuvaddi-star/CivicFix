@@ -3,7 +3,7 @@ import MongoStore from 'connect-mongo';
 import { env } from './env.js';
 
 export function configureSession(customMongoUri = null) {
-  const mongoUri = customMongoUri || env.mongoUri;
+  const mongoUri = customMongoUri || process.env.MONGODB_URI || env.mongoUri;
 
   const store = MongoStore.create({
     mongoUrl: mongoUri,

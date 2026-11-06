@@ -1,0 +1,63 @@
+services:
+  # ---------------------------------------------------------------------------
+  # 1. CivicFix Backend REST API Web Service
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: civicfix-api
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install --workspace=server
+    startCommand: node server/src/server.js
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: MONGODB_URI
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: SESSION_COOKIE_NAME
+        value: civicfix.sid
+      - key: SESSION_TTL_HOURS
+        value: 24
+      - key: COOKIE_SAME_SITE
+        value: none
+      - key: TRUST_PROXY
+        value: 1
+      - key: CLIENT_ORIGIN
+        fromService:
+          type: web
+          name: civicfix-web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: RATE_LIMIT_MAX
+        value: 100
+      - key: AUTH_RATE_LIMIT_MAX
+        value: 10
+      - key: LOG_LEVEL
+        value: info
+
+  # ---------------------------------------------------------------------------
+  # 2. CivicFix Frontend React SPA Static Site
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: civicfix-web
+    runtime: static
+    plan: free
+    region: oregon
+    buildCommand: npm install --workspace=client && npm run build --workspace=client
+    staticPublishPath: client/dist
+    autoDeploy: true
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: civicfix-api
+          envVarKey: RENDER_EXTERNAL_URL

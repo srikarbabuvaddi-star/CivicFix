@@ -4,7 +4,7 @@ import { logger } from '../utils/logger.js';
 
 let isConnected = false;
 
-export async function connectDB(uri = env.mongoUri) {
+export async function connectDB(uri = process.env.MONGODB_URI || env.mongoUri) {
   if (isConnected) {
     return mongoose.connection;
   }

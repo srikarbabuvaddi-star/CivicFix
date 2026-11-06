@@ -1,4 +1,9 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
+const rawApiUrl = (import.meta.env.VITE_API_URL || '/api/v1').trim();
+const API_BASE_URL = rawApiUrl.endsWith('/api/v1')
+  ? rawApiUrl
+  : rawApiUrl.startsWith('http')
+    ? `${rawApiUrl.replace(/\/+$/, '')}/api/v1`
+    : rawApiUrl;
 
 let inMemoryCsrfToken = null;
 
