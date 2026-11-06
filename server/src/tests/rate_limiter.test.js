@@ -3,8 +3,18 @@ import request from 'supertest';
 import express from 'express';
 import mongoose from 'mongoose';
 import { connectDB, disconnectDB } from '../config/db.js';
-import { MongoRateLimitStore, RateLimitModel } from '../middleware/rateLimitStore.js';
-import { createRateLimiter, authStore, generalStore } from '../middleware/rateLimiter.js';
+import {
+  MongoRateLimitStore,
+  RateLimitModel,
+  RateLimitStorageUnavailableError
+} from '../middleware/rateLimitStore.js';
+import {
+  createRateLimiter,
+  authStore,
+  generalStore,
+  authLimiter,
+  generalLimiter
+} from '../middleware/rateLimiter.js';
 
 const TEST_DB_URI = process.env.TEST_MONGODB_URI || 'mongodb://127.0.0.1:27017/civicfix_test_ratelimit';
 
@@ -329,6 +339,198 @@ describe('CivicFix Distributed Rate Limiting & Storage Suite', () => {
       const res = await failingStore.increment('client-err-test');
       expect(res.totalHits).toBe(1);
       expect(res.resetTime).toBeInstanceOf(Date);
+    });
+  });
+
+  describe('6. Authentication Routes Fail-Closed Outage Protection & Dynamic Recovery', () => {
+    it('returns HTTP 503 and does NOT execute downstream login handler when MongoDB is unavailable', async () => {
+      // Mock authStore to simulate MongoDB outage
+      const originalIsDbReady = authStore.isDbReady;
+      authStore.isDbReady = () => false;
+
+      let handlerExecuted = false;
+      const app = express();
+      app.use(express.json());
+      app.post('/api/v1/auth/login', authLimiter, (req, res) => {
+        handlerExecuted = true;
+        res.status(200).json({ success: true, message: 'Logged in' });
+      });
+
+      const response = await request(app)
+        .post('/api/v1/auth/login')
+        .send({ email: 'test@example.com', password: 'Password123!' });
+
+      expect(response.status).toBe(503);
+      expect(response.body.success).toBe(false);
+      expect(response.body.statusCode).toBe(503);
+      expect(response.body.message).toBe(
+        'Authentication service temporarily unavailable. Please try again shortly.'
+      );
+      expect(response.headers['x-ratelimit-mode']).toBe('unavailable');
+
+      // Crucial: Downstream handler MUST NEVER have been executed
+      expect(handlerExecuted).toBe(false);
+
+      // Verify no database credentials or connection info leaked
+      const bodyText = JSON.stringify(response.body);
+      expect(bodyText).not.toContain('mongodb');
+      expect(bodyText).not.toContain('MongoError');
+      expect(bodyText).not.toContain('connection');
+      expect(bodyText).not.toContain('stack');
+
+      authStore.isDbReady = originalIsDbReady;
+    });
+
+    it('returns HTTP 503 and does NOT execute downstream registration handler when MongoDB is unavailable', async () => {
+      const originalIsDbReady = authStore.isDbReady;
+      authStore.isDbReady = () => false;
+
+      let handlerExecuted = false;
+      const app = express();
+      app.use(express.json());
+      app.post('/api/v1/auth/register', authLimiter, (req, res) => {
+        handlerExecuted = true;
+        res.status(201).json({ success: true, message: 'Registered' });
+      });
+
+      const response = await request(app)
+        .post('/api/v1/auth/register')
+        .send({ name: 'Citizen', email: 'citizen@example.com', password: 'Password123!' });
+
+      expect(response.status).toBe(503);
+      expect(response.body.success).toBe(false);
+      expect(handlerExecuted).toBe(false);
+
+      authStore.isDbReady = originalIsDbReady;
+    });
+
+    it('never uses in-memory fallback for authentication (fallbackMap remains empty)', async () => {
+      const originalIsDbReady = authStore.isDbReady;
+      authStore.isDbReady = () => false;
+
+      const app = express();
+      app.post('/api/v1/auth/login', authLimiter, (req, res) => res.json({ success: true }));
+
+      // Send multiple requests during the database outage
+      await request(app).post('/api/v1/auth/login');
+      await request(app).post('/api/v1/auth/login');
+      await request(app).post('/api/v1/auth/login');
+
+      // The authStore fallbackMap must remain completely empty - no in-memory storage used!
+      expect(authStore.fallbackMap.size).toBe(0);
+
+      // Directly calling fallbackIncrement on a fail-closed store must throw RateLimitStorageUnavailableError
+      expect(() => {
+        authStore.fallbackIncrement('test-key', new Date());
+      }).toThrow(RateLimitStorageUnavailableError);
+
+      authStore.isDbReady = originalIsDbReady;
+    });
+
+    it('fails closed when MongoDB collection operation throws an unexpected runtime error', async () => {
+      const failClosedStore = new MongoRateLimitStore({
+        prefix: 'rl:fc_err:',
+        windowMs: 60000,
+        outagePolicy: 'fail-closed'
+      });
+
+      // DB appears ready, but operation throws e.g. query timeout
+      failClosedStore.isDbReady = () => true;
+      failClosedStore.model = {
+        collection: {
+          findOneAndUpdate: async () => {
+            throw new Error('connection closed unexpectedly');
+          }
+        }
+      };
+
+      const customLimiter = createRateLimiter({
+        store: failClosedStore,
+        outagePolicy: 'fail-closed',
+        max: 5
+      });
+
+      let handlerExecuted = false;
+      const app = express();
+      app.post('/api/v1/auth/custom', customLimiter, (req, res) => {
+        handlerExecuted = true;
+        res.json({ success: true });
+      });
+
+      const res = await request(app).post('/api/v1/auth/custom');
+      expect(res.status).toBe(503);
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toBe(
+        'Authentication service temporarily unavailable. Please try again shortly.'
+      );
+      expect(handlerExecuted).toBe(false);
+      expect(failClosedStore.fallbackMap.size).toBe(0);
+    });
+
+    it('automatically resumes shared MongoDB rate limiting when database reconnects', async () => {
+      let isMockOffline = true;
+      const originalIsDbReady = authStore.isDbReady;
+
+      authStore.isDbReady = () => {
+        if (isMockOffline) return false;
+        return originalIsDbReady.call(authStore);
+      };
+
+      let handlerCalls = 0;
+      const app = express();
+      app.post('/api/v1/auth/login', authLimiter, (req, res) => {
+        handlerCalls += 1;
+        res.json({ success: true, message: 'Welcome back' });
+      });
+
+      // 1. Database is down -> 503
+      const offlineRes = await request(app).post('/api/v1/auth/login');
+      expect(offlineRes.status).toBe(503);
+      expect(offlineRes.headers['x-ratelimit-mode']).toBe('unavailable');
+      expect(handlerCalls).toBe(0);
+
+      // 2. Database reconnects!
+      isMockOffline = false;
+
+      // 3. Database is back -> 200, handler executes, mode is shared-mongodb
+      const recoveredRes = await request(app).post('/api/v1/auth/login');
+      expect(recoveredRes.status).toBe(200);
+      expect(recoveredRes.body.success).toBe(true);
+      expect(recoveredRes.headers['x-ratelimit-mode']).toBe('shared-mongodb');
+      expect(handlerCalls).toBe(1);
+
+      // Verify counter was recorded in MongoDB
+      const doc = await RateLimitModel.findOne({ _id: { $regex: '^rl:auth:' } });
+      expect(doc).toBeDefined();
+      expect(doc.totalHits).toBeGreaterThanOrEqual(1);
+
+      authStore.isDbReady = originalIsDbReady;
+    });
+
+    it('distinguishes general API degraded mode from shared MongoDB mode via X-RateLimit-Mode header', async () => {
+      const originalGenIsDbReady = generalStore.isDbReady;
+
+      const app = express();
+      app.get('/api/v1/issues', generalLimiter, (req, res) => {
+        res.json({ success: true, data: [] });
+      });
+
+      // 1. Healthy database: sets shared-mongodb
+      const onlineRes = await request(app).get('/api/v1/issues');
+      expect(onlineRes.status).toBe(200);
+      expect(onlineRes.headers['x-ratelimit-mode']).toBe('shared-mongodb');
+
+      // 2. Database outage: sets degraded-local-memory without falsely claiming distributed protection
+      generalStore.isDbReady = () => false;
+      const offlineRes = await request(app).get('/api/v1/issues');
+      expect(offlineRes.status).toBe(200);
+      expect(offlineRes.headers['x-ratelimit-mode']).toBe('degraded-local-memory');
+
+      // 3. Reconnects: returns to shared-mongodb
+      generalStore.isDbReady = originalGenIsDbReady;
+      const reconnectedRes = await request(app).get('/api/v1/issues');
+      expect(reconnectedRes.status).toBe(200);
+      expect(reconnectedRes.headers['x-ratelimit-mode']).toBe('shared-mongodb');
     });
   });
 });

@@ -2,6 +2,21 @@ import mongoose from 'mongoose';
 import { logger } from '../utils/logger.js';
 
 /**
+ * Custom error thrown when rate limit storage is required but unavailable (fail-closed policy).
+ */
+export class RateLimitStorageUnavailableError extends Error {
+  constructor(message = 'Rate limit storage unavailable') {
+    super(message);
+    this.name = 'RateLimitStorageUnavailableError';
+    this.statusCode = 503;
+    this.code = 'RATE_LIMIT_STORAGE_UNAVAILABLE';
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, RateLimitStorageUnavailableError);
+    }
+  }
+}
+
+/**
  * Mongoose Schema for Distributed Rate Limiting.
  * Stores hit counts and reset timestamps with MongoDB TTL auto-cleanup.
  */
@@ -29,11 +44,19 @@ export const RateLimitModel =
  * Provides shared, atomic rate-limit state across multiple serverless instances
  * (e.g. Vercel Lambdas) and horizontally scaled container replicas.
  *
+ * Storage Policies:
+ * - 'fail-closed': Rejects requests with HTTP 503 if MongoDB is unavailable.
+ *   Essential for sensitive authentication routes (login, register) to prevent
+ *   brute-force attacks across serverless instances during database outages.
+ *   In-memory fallback is disabled for this policy.
+ * - 'degraded-local': Falls back to per-process in-memory counters during database
+ *   outages to preserve basic availability for non-sensitive endpoints, while
+ *   explicitly logging and advertising non-distributed degraded mode via headers.
+ *
  * Features:
  * 1. Atomic increment via MongoDB findOneAndUpdate ($inc).
  * 2. Automatic record expiry using MongoDB native TTL indexes on `expiresAt`.
- * 3. Graceful in-memory fallback during temporary database disconnects or cold start lag,
- *    preventing 500 errors and information disclosure.
+ * 3. Configurable outage policy (fail-closed for auth, degraded-local for general API).
  * 4. Key prefix namespacing to segregate different rate-limit policies (auth vs general).
  */
 export class MongoRateLimitStore {
@@ -42,14 +65,16 @@ export class MongoRateLimitStore {
    * @param {string} [options.prefix='rl:'] - Key prefix for namespace segregation
    * @param {number} [options.windowMs=900000] - Window duration in milliseconds
    * @param {mongoose.Model} [options.model] - Optional custom Mongoose model
+   * @param {'fail-closed' | 'degraded-local'} [options.outagePolicy='degraded-local'] - Outage policy
    */
   constructor(options = {}) {
     this.prefix = options.prefix || 'rl:';
     this.windowMs = options.windowMs || 15 * 60 * 1000;
     this.model = options.model || RateLimitModel;
+    this.outagePolicy = options.outagePolicy || 'degraded-local';
     this.localKeys = false; // Indicates shared distributed storage to express-rate-limit
 
-    // In-memory fallback map for resilience when MongoDB is disconnected
+    // In-memory fallback map for resilience when MongoDB is disconnected (degraded-local only)
     this.fallbackMap = new Map();
   }
 
@@ -146,25 +171,53 @@ export class MongoRateLimitStore {
           resetTime: upserted.resetTime || resetTime
         };
       } catch (dbErr) {
+        if (this.outagePolicy === 'fail-closed') {
+          logger.error(
+            `[RateLimit] MongoDB storage query error in fail-closed store (${this.prefix}): ${dbErr.message}`
+          );
+          throw new RateLimitStorageUnavailableError(
+            'Authentication rate-limit service unavailable. Shared storage query failed.'
+          );
+        }
+
         // Log safe warning without leaking internal connection info or crashing
         logger.warn(
-          `[RateLimit] MongoDB storage error: ${dbErr.message}. Falling back to process memory.`
+          `[RateLimit] MongoDB storage error: ${dbErr.message}. Operating in degraded local-memory mode.`
         );
       }
+    } else {
+      if (this.outagePolicy === 'fail-closed') {
+        logger.warn(
+          `[RateLimit] MongoDB storage unavailable for fail-closed namespace (${this.prefix}). Denying request.`
+        );
+        throw new RateLimitStorageUnavailableError(
+          'Authentication rate-limit service unavailable. Database connection is not ready.'
+        );
+      }
+      logger.warn(
+        `[RateLimit] MongoDB storage unavailable for general namespace (${this.prefix}). Operating in degraded local-memory mode (non-distributed).`
+      );
     }
 
-    // Fallback to process memory when database is not ready or query fails
+    // Fallback to process memory for degraded-local policy
     return this.fallbackIncrement(fullKey, now);
   }
 
   /**
    * Internal in-memory fallback increment when MongoDB is unreachable.
+   * Only accessible for 'degraded-local' policy; rejected for 'fail-closed'.
    *
    * @param {string} fullKey
    * @param {Date} now
    * @returns {{ totalHits: number, resetTime: Date }}
    */
   fallbackIncrement(fullKey, now) {
+    if (this.outagePolicy === 'fail-closed') {
+      throw new RateLimitStorageUnavailableError(
+        'Authentication rate-limit service unavailable. In-memory fallback is disabled for fail-closed policy.'
+      );
+    }
+
     let client = this.fallbackMap.get(fullKey);
     if (!client || client.resetTime.getTime() <= now.getTime()) {
       client = {
@@ -206,6 +259,10 @@ export class MongoRateLimitStore {
       }
     }
 
+    if (this.outagePolicy === 'fail-closed') {
+      return undefined;
+    }
+
     const client = this.fallbackMap.get(fullKey);
     if (client && client.resetTime.getTime() > now.getTime()) {
       return {
@@ -235,6 +292,10 @@ export class MongoRateLimitStore {
       }
     }
 
+    if (this.outagePolicy === 'fail-closed') {
+      return;
+    }
+
     const client = this.fallbackMap.get(fullKey);
     if (client && client.totalHits > 0) {
       client.totalHits -= 1;
@@ -255,7 +316,9 @@ export class MongoRateLimitStore {
         // Ignore
       }
     }
-    this.fallbackMap.delete(fullKey);
+    if (this.outagePolicy !== 'fail-closed') {
+      this.fallbackMap.delete(fullKey);
+    }
   }
 
   /**
@@ -281,4 +344,5 @@ export class MongoRateLimitStore {
     this.fallbackMap.clear();
   }
 }
+
 

@@ -30,6 +30,17 @@ export function errorHandler(err, req, res, _next) {
     message = `Invalid ${err.path}: ${err.value}`;
   }
 
+  // Handle rate-limit storage outages (fail-closed policy)
+  if (
+    err.name === 'RateLimitStorageUnavailableError' ||
+    err.code === 'RATE_LIMIT_STORAGE_UNAVAILABLE'
+  ) {
+    statusCode = 503;
+    message =
+      'Authentication service temporarily unavailable. Please try again shortly.';
+    details = null;
+  }
+
   // Log error (with stack trace in development)
   if (statusCode >= 500) {
     logger.error(`Server Error: ${message}`, {
@@ -60,7 +71,12 @@ export function errorHandler(err, req, res, _next) {
     payload.details = details;
   }
 
-  if (!env.isProduction && err.stack && statusCode >= 500) {
+  if (
+    !env.isProduction &&
+    err.stack &&
+    statusCode >= 500 &&
+    err.name !== 'RateLimitStorageUnavailableError'
+  ) {
     payload.stack = err.stack;
   }
 
