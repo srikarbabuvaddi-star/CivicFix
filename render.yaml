@@ -14,8 +14,6 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 5000
       - key: MONGODB_URI
         sync: false
       - key: SESSION_SECRET
@@ -29,10 +27,7 @@ services:
       - key: TRUST_PROXY
         value: 1
       - key: CLIENT_ORIGIN
-        fromService:
-          type: web
-          name: civicfix-web
-          envVarKey: RENDER_EXTERNAL_URL
+        value: https://civicfix-web.onrender.com
       - key: RATE_LIMIT_MAX
         value: 100
       - key: AUTH_RATE_LIMIT_MAX

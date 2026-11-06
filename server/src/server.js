@@ -9,17 +9,24 @@ async function bootstrap() {
   try {
     logger.info('Starting CivicFix backend service...');
 
-    // Connect to MongoDB
-    await connectDB();
-
     // Initialize application
     const app = createApp();
 
-    // Start HTTP server
-    server = app.listen(env.port, () => {
+    // Start HTTP server on 0.0.0.0 for containerized environments (Render, Railway, Docker)
+    server = app.listen(env.port, '0.0.0.0', () => {
       logger.info(`CivicFix API server running in [${env.nodeEnv}] on port ${env.port}`);
       logger.info(`Allowed client origin: ${env.clientOrigin}`);
     });
+
+    // Connect to MongoDB
+    try {
+      await connectDB();
+    } catch (dbError) {
+      logger.error('Failed to establish initial MongoDB connection:', dbError.message);
+      logger.warn(
+        'Server is running in degraded state. Liveness probe (/health) will succeed, but readiness (/ready) and stateful routes require MongoDB.'
+      );
+    }
 
     // Graceful Shutdown Handler
     const shutdown = async (signal) => {

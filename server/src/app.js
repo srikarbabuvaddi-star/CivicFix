@@ -2,6 +2,7 @@ import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import { URL } from 'url';
 import { env } from './config/env.js';
 import { configureSession } from './config/session.js';
 import { correlationId } from './middleware/correlationId.js';
@@ -43,7 +44,29 @@ export function createApp(customSessionStoreUri = null) {
   // Cross-Origin Resource Sharing
   app.use(
     cors({
-      origin: env.allowedOrigins,
+      origin: (origin, callback) => {
+        // Allow requests with no origin (mobile apps, curl, server-to-server, health checks)
+        if (!origin) return callback(null, true);
+
+        let isAllowed = false;
+        try {
+          const parsed = new URL(origin);
+          isAllowed =
+            env.allowedOrigins.includes(origin) ||
+            origin === env.clientOrigin ||
+            parsed.hostname === 'localhost' ||
+            parsed.hostname === '127.0.0.1' ||
+            parsed.hostname.endsWith('.onrender.com') ||
+            parsed.hostname.endsWith('.vercel.app');
+        } catch {
+          isAllowed = env.allowedOrigins.includes(origin);
+        }
+
+        if (isAllowed) {
+          return callback(null, true);
+        }
+        return callback(null, false);
+      },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'x-csrf-token', 'x-correlation-id'],
