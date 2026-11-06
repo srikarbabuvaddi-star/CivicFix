@@ -1,11 +1,15 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import request from 'supertest';
 import http from 'http';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { createApp } from '../app.js';
 import { connectDB, disconnectDB } from '../config/db.js';
 import * as dbConfig from '../config/db.js';
 import vercelHandler from '../../../api/index.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const TEST_DB_URI = process.env.TEST_MONGODB_URI || 'mongodb://127.0.0.1:27017/civicfix_test_health';
 
@@ -170,6 +174,40 @@ describe('CivicFix Health and Readiness Probes Integration Suite', () => {
       expect(res.body?.success).toBe(false);
       expect(res.body?.message).toContain('temporarily unavailable');
       spy.mockRestore();
+    });
+  });
+
+  describe('4. Vercel Serverless Entry Point ESM Compatibility & Module Loading', () => {
+    it('successfully loads Express application and DB module without ERR_REQUIRE_ESM', async () => {
+      const vercelModule = await import('../../../api/index.js');
+      expect(vercelModule.default).toBeDefined();
+      expect(typeof vercelModule.default).toBe('function');
+    });
+
+    it('executes standalone Node ESM child process loading api/index.js without ERR_REQUIRE_ESM or warnings', async () => {
+      const { execSync } = await import('child_process');
+      const rootPath = path.resolve(__dirname, '../../../');
+
+      const output = execSync(
+        'node -e "import(\'./api/index.js\').then(m => console.log(\'LOADED:\' + typeof m.default))"',
+        { cwd: rootPath, encoding: 'utf-8' }
+      );
+
+      expect(output).toContain('LOADED:function');
+      expect(output).not.toContain('ERR_REQUIRE_ESM');
+      expect(output).not.toContain('MODULE_TYPELESS_PACKAGE_JSON');
+    });
+
+    it('successfully handles /api/v1/auth/csrf-token through serverless handler when DB is connected', async () => {
+      if (mongoose.connection.readyState === 0) {
+        await connectDB(TEST_DB_URI);
+      }
+
+      const res = await request(serverlessApp).get('/api/v1/auth/csrf-token');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.csrfToken).toBeDefined();
+      expect(typeof res.body.data.csrfToken).toBe('string');
     });
   });
 });
