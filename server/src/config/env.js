@@ -1,5 +1,6 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { z } from 'zod';
 
@@ -55,10 +56,15 @@ const envSchema = z.object({
   EMAIL_FROM: z.string().default('CivicFix Notifications <notifications@civicfix.org>')
 });
 
+let isConfigValid = true;
+let configErrors = [];
+let missingVars = [];
+
+const parseResult = envSchema.safeParse(process.env);
 let parsedEnv;
 
-try {
-  parsedEnv = envSchema.parse(process.env);
+if (parseResult.success) {
+  parsedEnv = parseResult.data;
 
   // Production credential & secret validation safeguard
   if (parsedEnv.NODE_ENV === 'production') {
@@ -67,30 +73,45 @@ try {
       parsedEnv.SESSION_SECRET.toLowerCase().includes(pattern)
     );
     if (isSecretInsecure) {
-      console.error('\n======================================================');
-      console.error('FATAL SECURITY VIOLATION: Insecure SESSION_SECRET');
-      console.error('======================================================');
-      console.error('In production, SESSION_SECRET must not use a template, example, or placeholder secret.');
-      console.error('Generate a random 32+ character secret using crypto.randomBytes(32).toString("hex")\n');
-      process.exit(1);
+      isConfigValid = false;
+      configErrors.push('Insecure SESSION_SECRET: template or example secret used in production. A cryptographically random secret is required.');
     }
   }
-} catch (error) {
-  if (error instanceof z.ZodError) {
-    const formattedErrors = error.errors.map(err => `  - ${err.path.join('.')}: ${err.message}`).join('\n');
-    console.error('\n========================================');
-    console.error('FATAL: Environment Configuration Error');
-    console.error('========================================');
-    console.error(formattedErrors);
-    console.error('Please configure your .env file according to .env.example\n');
-    if (!isTest) {
-      process.exit(1);
-    }
-  }
-  throw error;
+} else {
+  isConfigValid = false;
+  configErrors = parseResult.error.errors.map(err => `${err.path.join('.')}: ${err.message}`);
+  missingVars = parseResult.error.errors.map(err => err.path.join('.'));
+
+  // Safe fallback to prevent serverless container termination (status 128) during module import
+  parsedEnv = {
+    NODE_ENV: process.env.NODE_ENV || 'production',
+    PORT: Number(process.env.PORT) || 5000,
+    MONGODB_URI: process.env.MONGODB_URI || '',
+    SESSION_SECRET: process.env.SESSION_SECRET && process.env.SESSION_SECRET.length >= 32
+      ? process.env.SESSION_SECRET
+      : crypto.randomBytes(32).toString('hex'),
+    SESSION_COOKIE_NAME: process.env.SESSION_COOKIE_NAME || 'civicfix.sid',
+    SESSION_TTL_HOURS: Number(process.env.SESSION_TTL_HOURS) || 24,
+    CLIENT_ORIGIN: process.env.CLIENT_ORIGIN || 'https://civicfix-web.onrender.com',
+    ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || '',
+    COOKIE_SAME_SITE: process.env.COOKIE_SAME_SITE || 'lax',
+    TRUST_PROXY: Number(process.env.TRUST_PROXY) || 1,
+    RATE_LIMIT_WINDOW_MS: 15 * 60 * 1000,
+    RATE_LIMIT_MAX: 100,
+    AUTH_RATE_LIMIT_MAX: 10,
+    EMAIL_ENABLED: false,
+    SMTP_HOST: 'localhost',
+    SMTP_PORT: 587,
+    SMTP_USER: '',
+    SMTP_PASS: '',
+    EMAIL_FROM: 'CivicFix Notifications <notifications@civicfix.org>'
+  };
 }
 
 export const env = {
+  isConfigValid,
+  configErrors,
+  missingVars,
   isProduction: parsedEnv.NODE_ENV === 'production',
   isDevelopment: parsedEnv.NODE_ENV === 'development',
   isTest: parsedEnv.NODE_ENV === 'test',

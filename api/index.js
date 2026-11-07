@@ -14,6 +14,11 @@ function isReadinessRoute(url = '') {
 }
 
 export default async function handler(req, res) {
+  // Normalize req.url if Vercel internal router passes the rewrite destination
+  if (req.headers && req.headers['x-matched-path'] && (req.url === '/api/index.js' || req.url.startsWith('/api/index.js'))) {
+    req.url = req.headers['x-matched-path'];
+  }
+
   if (!appInstance) {
     appInstance = createApp();
   }

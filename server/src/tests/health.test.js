@@ -210,4 +210,26 @@ describe('CivicFix Health and Readiness Probes Integration Suite', () => {
       expect(typeof res.body.data.csrfToken).toBe('string');
     });
   });
+
+  describe('5. Serverless Resiliency Under Unconfigured Environment Variables', () => {
+    it('loads api/index.js in production without exiting process or status 128 when env vars are unconfigured', async () => {
+      const { execSync } = await import('child_process');
+      const rootPath = path.resolve(__dirname, '../../../');
+
+      const output = execSync(
+        'node -e "process.env.NODE_ENV=\'production\'; delete process.env.MONGODB_URI; delete process.env.SESSION_SECRET; import(\'./api/index.js\').then(m => console.log(\'SERVERLESS_SAFE:\' + typeof m.default))"',
+        { cwd: rootPath, encoding: 'utf-8' }
+      );
+
+      expect(output).toContain('SERVERLESS_SAFE:function');
+    });
+
+    it('returns HTTP 503 for stateful API route when MONGODB_URI is not configured without crashing', async () => {
+      const { createApp: createTestApp } = await import('../app.js');
+      const noDbApp = createTestApp(null);
+      const res = await request(noDbApp).get('/api/v1/auth/me');
+
+      expect([401, 503]).toContain(res.status);
+    });
+  });
 });

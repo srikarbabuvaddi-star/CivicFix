@@ -18,7 +18,7 @@
       "destination": "/api/index.js"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!api/|health|ready).*)",
       "destination": "/index.html"
     }
   ]

@@ -1,16 +1,23 @@
 import session from 'express-session';
 import MongoStore from 'connect-mongo';
 import { env } from './env.js';
+import { logger } from '../utils/logger.js';
 
 export function configureSession(customMongoUri = null) {
   const mongoUri = customMongoUri || process.env.MONGODB_URI || env.mongoUri;
 
-  const store = MongoStore.create({
-    mongoUrl: mongoUri,
-    ttl: env.sessionTtlMs / 1000,
-    autoRemove: 'native',
-    touchAfter: 12 * 3600 // Lazy session update every 12 hours unless data changed
-  });
+  let store;
+  if (mongoUri) {
+    store = MongoStore.create({
+      mongoUrl: mongoUri,
+      ttl: env.sessionTtlMs / 1000,
+      autoRemove: 'native',
+      touchAfter: 12 * 3600 // Lazy session update every 12 hours unless data changed
+    });
+  } else {
+    logger.warn('[Session] MONGODB_URI not provided. Initializing session in fallback MemoryStore mode.');
+    store = new session.MemoryStore();
+  }
 
   return session({
     name: env.sessionCookieName,

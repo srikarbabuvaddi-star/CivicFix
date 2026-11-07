@@ -7,6 +7,13 @@ let server;
 
 async function bootstrap() {
   try {
+    if (!env.isConfigValid && env.isProduction) {
+      logger.error('Fatal: Cannot start CivicFix standalone server due to invalid environment configuration:');
+      env.configErrors.forEach((err) => logger.error(`  - ${err}`));
+      logger.error('Please configure your .env file or environment variables before starting.\n');
+      process.exit(1);
+    }
+
     logger.info('Starting CivicFix backend service...');
 
     // Initialize application

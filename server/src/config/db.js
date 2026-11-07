@@ -3,50 +3,71 @@ import { env } from './env.js';
 import { logger } from '../utils/logger.js';
 
 let isConnected = false;
+let cachedPromise = null;
+
+// Attach global Mongoose event listeners once
+mongoose.connection.on('error', (err) => {
+  logger.error('MongoDB runtime connection error:', err.message);
+  isConnected = false;
+});
+
+mongoose.connection.on('disconnected', () => {
+  logger.warn('MongoDB connection lost. Reconnecting...');
+  isConnected = false;
+});
+
+mongoose.connection.on('reconnected', () => {
+  logger.info('MongoDB reconnected successfully.');
+  isConnected = true;
+});
 
 export async function connectDB(uri = process.env.MONGODB_URI || env.mongoUri) {
-  if (isConnected) {
+  if (mongoose.connection.readyState === 1) {
+    isConnected = true;
     return mongoose.connection;
+  }
+
+  if (!uri) {
+    throw new Error('MONGODB_URI is not configured in the environment.');
+  }
+
+  if (cachedPromise) {
+    return cachedPromise;
   }
 
   try {
     mongoose.set('strictQuery', true);
 
-    const conn = await mongoose.connect(uri, {
+    cachedPromise = mongoose.connect(uri, {
       serverSelectionTimeoutMS: 5000,
       autoIndex: true
-    });
+    }).then((conn) => {
+      cachedPromise = null;
+      isConnected = conn.connection.readyState === 1;
 
-    isConnected = conn.connection.readyState === 1;
+      // Mask credentials in connection string for logging
+      const safeHost = conn.connection.host || 'database';
+      const safeDbName = conn.connection.name || 'civicfix';
+      logger.info(`MongoDB connected: ${safeHost}/${safeDbName}`);
 
-    // Mask credentials in connection string for logging
-    const safeHost = conn.connection.host || 'database';
-    const safeDbName = conn.connection.name || 'civicfix';
-    logger.info(`MongoDB connected: ${safeHost}/${safeDbName}`);
-
-    mongoose.connection.on('error', (err) => {
-      logger.error('MongoDB runtime connection error:', err.message);
+      return conn.connection;
+    }).catch((err) => {
+      cachedPromise = null;
       isConnected = false;
+      logger.error('Failed to establish MongoDB connection:', err.message);
+      throw err;
     });
 
-    mongoose.connection.on('disconnected', () => {
-      logger.warn('MongoDB connection lost. Reconnecting...');
-      isConnected = false;
-    });
-
-    mongoose.connection.on('reconnected', () => {
-      logger.info('MongoDB reconnected successfully.');
-      isConnected = true;
-    });
-
-    return conn.connection;
+    return await cachedPromise;
   } catch (error) {
-    logger.error('Failed to establish MongoDB connection:', error.message);
+    cachedPromise = null;
+    isConnected = false;
     throw error;
   }
 }
 
 export async function disconnectDB() {
+  cachedPromise = null;
   if (!isConnected && mongoose.connection.readyState === 0) {
     return;
   }
