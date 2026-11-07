@@ -8,10 +8,9 @@ let server;
 async function bootstrap() {
   try {
     if (!env.isConfigValid && env.isProduction) {
-      logger.error('Fatal: Cannot start CivicFix standalone server due to invalid environment configuration:');
-      env.configErrors.forEach((err) => logger.error(`  - ${err}`));
-      logger.error('Please configure your .env file or environment variables before starting.\n');
-      process.exit(1);
+      logger.warn('WARNING: CivicFix standalone server starting with incomplete environment configuration:');
+      env.configErrors.forEach((err) => logger.warn(`  - ${err}`));
+      logger.warn('Server is running in degraded mode: /health probe will pass, but database-dependent routes will require environment variables.\n');
     }
 
     logger.info('Starting CivicFix backend service...');

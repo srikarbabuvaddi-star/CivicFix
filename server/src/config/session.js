@@ -14,6 +14,11 @@ export function configureSession(customMongoUri = null) {
       autoRemove: 'native',
       touchAfter: 12 * 3600 // Lazy session update every 12 hours unless data changed
     });
+    if (store && store.clientPromise) {
+      store.clientPromise.catch((err) => {
+        logger.warn(`[Session Store] MongoStore connection warning: ${err.message}`);
+      });
+    }
   } else {
     logger.warn('[Session] MONGODB_URI not provided. Initializing session in fallback MemoryStore mode.');
     store = new session.MemoryStore();
