@@ -21,10 +21,18 @@ mongoose.connection.on('reconnected', () => {
   isConnected = true;
 });
 
-export async function connectDB(uri = process.env.MONGODB_URI || env.mongoUri) {
+export async function connectDB(rawUri = process.env.MONGODB_URI || env.mongoUri) {
   if (mongoose.connection.readyState === 1) {
     isConnected = true;
     return mongoose.connection;
+  }
+
+  let uri = rawUri ? String(rawUri).trim() : '';
+  if (uri.startsWith('MONGODB_URI=')) {
+    uri = uri.substring('MONGODB_URI='.length).trim();
+  }
+  if ((uri.startsWith('"') && uri.endsWith('"')) || (uri.startsWith("'") && uri.endsWith("'"))) {
+    uri = uri.slice(1, -1).trim();
   }
 
   if (!uri) {

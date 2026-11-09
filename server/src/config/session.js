@@ -4,7 +4,16 @@ import { env } from './env.js';
 import { logger } from '../utils/logger.js';
 
 export function configureSession(customMongoUri = null) {
-  const mongoUri = customMongoUri || process.env.MONGODB_URI || env.mongoUri;
+  let mongoUri = customMongoUri || process.env.MONGODB_URI || env.mongoUri;
+  if (mongoUri) {
+    mongoUri = String(mongoUri).trim();
+    if (mongoUri.startsWith('MONGODB_URI=')) {
+      mongoUri = mongoUri.substring('MONGODB_URI='.length).trim();
+    }
+    if ((mongoUri.startsWith('"') && mongoUri.endsWith('"')) || (mongoUri.startsWith("'") && mongoUri.endsWith("'"))) {
+      mongoUri = mongoUri.slice(1, -1).trim();
+    }
+  }
 
   let store;
   if (mongoUri) {

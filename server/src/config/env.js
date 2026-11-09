@@ -22,12 +22,34 @@ const envSchema = z.object({
   MONGODB_URI: z
     .string()
     .default(() => (isTest ? defaultTestDbUri : (process.env.TEST_MONGODB_URI || '')))
+    .transform((val) => {
+      if (!val) return val;
+      let cleaned = val.trim();
+      if (cleaned.startsWith('MONGODB_URI=')) {
+        cleaned = cleaned.substring('MONGODB_URI='.length).trim();
+      }
+      if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+        cleaned = cleaned.slice(1, -1).trim();
+      }
+      return cleaned;
+    })
     .refine((val) => Boolean(val && val.length > 0), {
       message: 'MONGODB_URI is required. Please set MONGODB_URI in your environment or .env file.'
     }),
   SESSION_SECRET: z
     .string()
     .default(() => (isTest ? defaultTestSecret : ''))
+    .transform((val) => {
+      if (!val) return val;
+      let cleaned = val.trim();
+      if (cleaned.startsWith('SESSION_SECRET=')) {
+        cleaned = cleaned.substring('SESSION_SECRET='.length).trim();
+      }
+      if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+        cleaned = cleaned.slice(1, -1).trim();
+      }
+      return cleaned;
+    })
     .refine((val) => Boolean(val && val.length >= 32), {
       message: 'SESSION_SECRET must be at least 32 characters long for cryptographic security'
     }),
@@ -82,13 +104,27 @@ if (parseResult.success) {
   configErrors = parseResult.error.errors.map(err => `${err.path.join('.')}: ${err.message}`);
   missingVars = parseResult.error.errors.map(err => err.path.join('.'));
 
+  // Helper to sanitize accidental prefixing in env values (e.g. "KEY=value")
+  const sanitizeValue = (val, prefix) => {
+    if (!val) return '';
+    let cleaned = String(val).trim();
+    if (cleaned.startsWith(prefix)) cleaned = cleaned.substring(prefix.length).trim();
+    if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+      cleaned = cleaned.slice(1, -1).trim();
+    }
+    return cleaned;
+  };
+
+  const rawMongoUri = sanitizeValue(process.env.MONGODB_URI, 'MONGODB_URI=');
+  const rawSessionSecret = sanitizeValue(process.env.SESSION_SECRET, 'SESSION_SECRET=');
+
   // Safe fallback to prevent serverless container termination (status 128) during module import
   parsedEnv = {
     NODE_ENV: process.env.NODE_ENV || 'production',
     PORT: Number(process.env.PORT) || 5000,
-    MONGODB_URI: process.env.MONGODB_URI || '',
-    SESSION_SECRET: process.env.SESSION_SECRET && process.env.SESSION_SECRET.length >= 32
-      ? process.env.SESSION_SECRET
+    MONGODB_URI: rawMongoUri,
+    SESSION_SECRET: rawSessionSecret && rawSessionSecret.length >= 32
+      ? rawSessionSecret
       : crypto.randomBytes(32).toString('hex'),
     SESSION_COOKIE_NAME: process.env.SESSION_COOKIE_NAME || 'civicfix.sid',
     SESSION_TTL_HOURS: Number(process.env.SESSION_TTL_HOURS) || 24,
