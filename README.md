@@ -3,6 +3,9 @@
 **Individual B.Tech CSE Major Project**  
 *Development Environment: Google Antigravity | Full-Stack Production Architecture*
 
+**Live Production Deployment:** [https://civicfix-ashen-three.vercel.app](https://civicfix-ashen-three.vercel.app)  
+**System Status:** 🟢 Operational (Production Ready) | 125/125 Backend Tests Passing | 13/13 Frontend Tests Passing | Connected to MongoDB Atlas
+
 ---
 
 ## 1. Project Overview
